@@ -1279,6 +1279,66 @@ export interface ReconnectConfig {
 
 来源：[`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
 
+<a id="deepseek-aidsh-meeting-minutes"></a>
+
+## `@deepseek-ai/dsh-meeting-minutes`
+
+需要：`webServer` · `subprocess` · `llm` · `agentDefaultModel`
+
+```ts config-catalog
+/** Host plugin configuration. */
+export interface Config {
+  /** Root containing one private directory per meeting. */
+  storageRoot?: string
+  /** Local Python worker or remote OpenAI-compatible ASR endpoint. */
+  asrMode?: 'local' | 'remote'
+  /** Complete local Qwen3-ASR-1.7B model directory. */
+  localModelPath?: string
+  /** Python executable hosting the persistent qwen-asr worker. */
+  pythonExecutable?: string
+  /** Local inference device; auto tries CUDA, then MPS, then CPU. */
+  localDevice?: 'auto' | 'cuda' | 'mps' | 'cpu'
+  /** Qwen ASR language name, or `auto` for language detection. */
+  language?: string
+  /** Normalized WAV chunk duration. */
+  asrChunkSeconds?: number
+  /** Deadline for each local or remote ASR chunk. */
+  asrRequestTimeoutMs?: number
+  /** Idle time after which the persistent local ASR process is stopped. */
+  asrIdleShutdownMs?: number
+  /** Generated-token cap for each ASR chunk. */
+  asrMaxOutputTokens?: number
+  /** Complete remote chat-completions endpoint. */
+  remoteEndpoint?: string
+  /** Model id sent to the remote ASR server. */
+  remoteModel?: string
+  /** Environment variable carrying the optional remote bearer token. */
+  remoteApiKeyEnv?: string
+  /** Explicit summary route; omission uses the current default Agent route. */
+  summaryProvider?: string
+  /** Explicit summary model; must be paired with summaryProvider. */
+  summaryModel?: string
+  /** Maximum UTF-8 input bytes for each hierarchical summary request. */
+  summaryMaxInputBytes?: number
+  /** Output-token cap for partial and final summary requests. */
+  summaryMaxOutputTokens?: number
+  /** Maximum hierarchical reduction rounds before an oversized summary fails. */
+  summaryMaxReductionRounds?: number
+  /** Deadline for each summary request. */
+  summaryRequestTimeoutMs?: number
+  /** Largest accepted browser recording body. */
+  maxUploadBytes?: number
+  /** Newest meetings returned by the history list route. */
+  listMaxMeetings?: number
+  /** IANA time zone used in the final Markdown filename. */
+  timeZone?: string
+  /** Optional FFmpeg executable override. */
+  ffmpegExecutable?: string
+}
+```
+
+来源：[`packages/meeting/meeting-minutes/src/config.ts:10`](../packages/meeting/meeting-minutes/src/config.ts)
+
 <a id="deepseek-aidsh-message-feedback"></a>
 
 ## `@deepseek-ai/dsh-message-feedback`

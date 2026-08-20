@@ -52,13 +52,22 @@ const CLAUDE_PLATFORM_PACKAGE_PREFIX = `${CLAUDE_AGENT_SDK_PACKAGE}-`
 const CLAUDE_PLATFORM_DECLARED_LICENSE = 'SEE LICENSE IN LICENSE.md'
 
 /**
+ * Runtime packages whose copyleft terms the owner reviewed and accepted, each with the obligation
+ * that travels with an artifact shipping it. An entry records a distribution decision; it does not
+ * reclassify the package's terms as permissive.
+ */
+const AUTHORIZED_COPYLEFT_RUNTIME: Record<string, string> = {
+  'ffmpeg-static': 'installs a prebuilt FFmpeg executable under GPL terms. The harness runs it as a separate process and links none of its code, so the MIT sources stay MIT; an artifact that ships the executable carries the GPL obligations for it, and the corresponding source is [FFmpeg](https://github.com/FFmpeg/FFmpeg). Setting `ffmpegExecutable` runs a separately installed FFmpeg instead',
+}
+
+/**
  * Whether a non-permissive runtime declaration has an identity-scoped owner
  * authorization. This does not reclassify its terms as permissive.
  * @param name - exact npm package identity.
- * @returns true only for the official Claude Agent SDK package.
+ * @returns true for the official Claude Agent SDK package and for each reviewed copyleft entry.
  */
 export function isOwnerAuthorizedRuntime(name: string): boolean {
-  return name === CLAUDE_AGENT_SDK_PACKAGE
+  return name === CLAUDE_AGENT_SDK_PACKAGE || name in AUTHORIZED_COPYLEFT_RUNTIME
 }
 
 /**
@@ -629,6 +638,16 @@ function renderNonPermissiveNote(deps: ExternalDep[]): string {
   return `\n${subject} ${named.length === 1 ? 'runs' : 'run'} only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact.\n`
 }
 
+/** Disclose the reviewed copyleft runtime packages and the obligation each one carries. */
+function renderAuthorizedCopyleft(deps: ExternalDep[]): string {
+  const authorized = deps.filter(dep => dep.name in AUTHORIZED_COPYLEFT_RUNTIME)
+  if (authorized.length === 0) return ''
+  const lines = authorized.map(dep =>
+    `- [\`${dep.name}\`](${dep.repo}) (${dep.license}) ${AUTHORIZED_COPYLEFT_RUNTIME[dep.name] ?? ''}.`,
+  )
+  return `\nThe following runtime packages carry copyleft terms the project owner reviewed and accepted. Each remains under its own license, and its obligations travel with any artifact that ships it:\n\n${lines.join('\n')}\n`
+}
+
 /** Render one npm dependency table. */
 function renderNpmTable(deps: ExternalDep[]): string {
   const lines = ['| Package | License |', '| --- | --- |']
@@ -714,7 +733,7 @@ ${renderNpmTable(runtimeDeps)}
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
 ${patchedLines.join('\n')}
-${renderClaudeDistribution(claudeDistribution)}
+${renderAuthorizedCopyleft(runtimeDeps)}${renderClaudeDistribution(claudeDistribution)}
 
 ## Development-only npm dependencies
 

@@ -1,0 +1,9 @@
+upload=POST /meeting-minutes/api/meetings
+upload.type=video/mp4
+upload.started=2026-08-19T01:58:30.000Z
+upload.ended=2026-08-19T02:00:00.000Z
+upload.source=morning-standup.mp4
+state=Meeting minutes are ready
+source=morning-standup.mp4
+topic=Morning standup
+minutes=/meeting-minutes/api/meetings/meeting-20260819T020000-abcdef012345/minutes

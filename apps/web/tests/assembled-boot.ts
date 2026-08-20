@@ -15,7 +15,10 @@ import type { WebBootEntry } from '@deepseek-ai/dsh-client-modules/client'
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 
 /** Boot entries for the minimal assembled graph, each carrying the workspace bundle it loads. */
-const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
+/** One additional built client bundle mounted by an assembled snapshot. */
+export type AssembledBootPlugin = WebBootEntry & { bundlePath: string }
+
+const PLUGINS: readonly AssembledBootPlugin[] = [
   { id: '@deepseek-ai/dsh-typert-registry', bundlePath: 'packages/typert/registry/lib/client.js', url: '/plugins/typert-registry.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-client-connection', bundlePath: 'packages/client/connection/lib/client.js', url: '/plugins/connection.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-api-gateway', bundlePath: 'packages/api/gateway/lib/client.js', url: '/plugins/api-gateway.js', rev: 'fx', inject: ['@deepseek-ai/dsh-typert-registry', '@deepseek-ai/dsh-client-connection'], immediately: true },
@@ -47,7 +50,7 @@ const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
   { id: '@deepseek-ai/dsh-client-ui-trajectory', bundlePath: 'packages/client/ui-trajectory/lib/client.js', url: '/plugins/ui-trajectory.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
 ]
 
-const bundles = new Map(PLUGINS.map(plugin => [
+const baseBundles = new Map(PLUGINS.map(plugin => [
   plugin.url,
   readFileSync(join(process.cwd(), plugin.bundlePath), 'utf8'),
 ]))
@@ -112,12 +115,17 @@ export function installAssembledBootEnv(): void {
  * Mount the assembled application on the fixture transport; the teardown
  * registered by installAssembledBootEnv disposes it.
  */
-export function mountAssembledApp(): void {
+export function mountAssembledApp(extraPlugins: readonly AssembledBootPlugin[] = []): void {
   history.replaceState(null, '', '/?fixture')
   const root = document.createElement('div')
   root.id = 'root'
   document.body.appendChild(root)
-  win.__DSH_BOOT__ = { rev: 'fx', entries: PLUGINS.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
+  const plugins = [...PLUGINS, ...extraPlugins]
+  const bundles = new Map(baseBundles)
+  for (const plugin of extraPlugins) {
+    bundles.set(plugin.url, readFileSync(join(process.cwd(), plugin.bundlePath), 'utf8'))
+  }
+  win.__DSH_BOOT__ = { rev: 'fx', entries: plugins.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
   act(() => {
     const entry = new AppWebEntry(root, {
       loadBundle: async (url) => {

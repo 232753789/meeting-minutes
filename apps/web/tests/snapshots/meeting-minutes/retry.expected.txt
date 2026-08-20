@@ -1,0 +1,11 @@
+before.state=Processing failed
+before.error=ASR model unavailable
+before.retry=Process again
+before.back=Back to list
+before.original=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/original
+retry=POST /meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/retry
+after.state=Meeting minutes are ready
+after.topic=Recovered weekly sync
+after.transcript=Recovered complete transcript.
+after.minutes=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/minutes
+after.original=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/original

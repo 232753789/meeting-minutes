@@ -1,0 +1,11 @@
+title=Meeting minutes
+state=Meeting minutes are ready
+topic=Project weekly sync
+audio=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/audio
+summary=### Decisions
+
+Continue the agreed rollout.
+transcript=Complete meeting transcript.
+download=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/minutes
+transcriptFile=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/transcript
+original=/meeting-minutes/api/meetings/meeting-20260819T091500-012345abcdef/original

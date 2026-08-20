@@ -58,6 +58,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
+| [`ffmpeg-static`](https://github.com/eugeneware/ffmpeg-static) | GPL-3.0-or-later |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
 | [`js-yaml`](https://github.com/nodeca/js-yaml) | MIT |
 | [`katex`](https://github.com/KaTeX/KaTeX) | MIT |
@@ -94,6 +95,10 @@ External packages that a workspace package resolves at runtime. The tier covers 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
+
+The following runtime packages carry copyleft terms the project owner reviewed and accepted. Each remains under its own license, and its obligations travel with any artifact that ships it:
+
+- [`ffmpeg-static`](https://github.com/eugeneware/ffmpeg-static) (GPL-3.0-or-later) installs a prebuilt FFmpeg executable under GPL terms. The harness runs it as a separate process and links none of its code, so the MIT sources stay MIT; an artifact that ships the executable carries the GPL obligations for it, and the corresponding source is [FFmpeg](https://github.com/FFmpeg/FFmpeg). Setting `ffmpegExecutable` runs a separately installed FFmpeg instead.
 
 ## Official Claude Code platform payloads
 
