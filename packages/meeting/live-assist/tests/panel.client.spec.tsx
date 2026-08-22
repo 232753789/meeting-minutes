@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, getDefaultNormalizer, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MissingSystemAudioError } from '../src/client/audio-capture.ts'
+import { BackgroundCard } from '../src/client/BackgroundCard.tsx'
 import { ExchangeCard } from '../src/client/ExchangeCard.tsx'
 import { LiveAssistButton, statusKey } from '../src/client/LiveAssistButton.tsx'
 import { LiveAssistController, type ControllerState } from '../src/client/live-controller.ts'
@@ -225,6 +226,27 @@ describe('LiveAssistButton session handoff', () => {
   it('does not adopt when nothing is pending', () => {
     const { mocks } = renderButton({ state: { running: false } })
     expect(mocks.adopt).not.toHaveBeenCalled()
+  })
+})
+
+describe('BackgroundCard', () => {
+  function renderCard(background: string) {
+    const props = { t, node: { data: { background } } } as unknown as ComponentProps<typeof BackgroundCard>
+    render(<BackgroundCard {...props} />)
+  }
+
+  it('shows the material in full, exactly as the answer requests carry it', () => {
+    const material = '五年 Go\n做过信贷风控，想强调实时决策引擎。'
+    renderCard(material)
+    expect(screen.getByText(zh['background.title'])).toBeTruthy()
+    // Matched without collapsing whitespace: the line break the interviewee typed is still there.
+    expect(screen.getByText(material, { normalizer: getDefaultNormalizer({ collapseWhitespace: false }) }))
+      .toBeTruthy()
+  })
+
+  it('says so when the run was started without material', () => {
+    renderCard('   ')
+    expect(screen.getByText(zh['background.empty'])).toBeTruthy()
   })
 })
 

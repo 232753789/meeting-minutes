@@ -63,11 +63,14 @@ The plugin checks the same file list as [`dsh-meeting-minutes`](../meeting-minut
 1. Open the **Interview assist** control in the composer, and paste your background material — résumé, target role, projects worth emphasizing. It is kept in browser storage and sent to this machine only.
 2. Press **Start listening**. A session that already holds a conversation gets a new dsh session first, switched to immediately, so the interview does not land in whatever conversation you had open; a blank session is listened in as it is, because that is the session New Session would land in anyway. In the browser's share picker, choose the **tab** running the meeting and turn on *Share tab audio*. Keep the share open for the whole call.
 3. The dialog closes and the composer keeps one compact row: a status dot, what the recognizer is doing, **Pause**, and **Stop**. Everything else is the conversation.
-4. Each thing the counterpart says arrives as a message, with the answer suggested for it beneath it. The view scrolls with the newest exchange; scrolling up stops that, exactly as it does for an ordinary conversation.
+4. The material you just entered arrives in the conversation first, in full, and the session is named. Listening starts once both are done.
+5. Each thing the counterpart says arrives as a message, with the answer suggested for it beneath it. The view scrolls with the newest exchange; scrolling up stops that, exactly as it does for an ordinary conversation.
 
 Every utterance gets its own answer. Answers are generated one at a time in the order the questions were heard, and a newer question never cancels the one being answered — the recognizer splits on silence, so a pause mid-sentence can end an utterance early, and cancelling would throw away the answer to the real question while leaving only the fragment that followed it. The cost is that answers queue: if the counterpart asks three things in a row, the third answer waits for the first two.
 
-The session is named from your background material by the same model route, so it is identifiable in the session list without being opened. Naming does not delay listening — audio flows while the title request is still out, and a session that fails to be named keeps its default name.
+The material this run was started with is written into the conversation verbatim, as a message of its own. Every answer request carries exactly that text, so it is neither truncated nor summarized: what is on screen is what the model was given.
+
+The session is named from that material by the same model route, and the name is saved before listening starts, so the session is identifiable in the list from its first frame. The cost is one model request of start latency: the panel stays on "Connecting…" through it, and the counterpart is not yet being listened to. A failed request, a title the model declined to produce, and a missing `sessionTitle` service all leave the default name and start listening anyway.
 
 **Pause** withholds audio from the recognizer without dropping the session — use it while you are the one talking. **Stop** ends the share; the session stays and can be reopened from the session list.
 
@@ -86,6 +89,8 @@ Qwen3-ASR does support streaming inference, but only through its vLLM backend, w
 | First answer token from `ctx.llm` | ~500 ms |
 
 Roughly two to two and a half seconds pass between the counterpart finishing a sentence and the first words of an answer appearing. Lowering `vadMinSilenceMs` shortens that, at the cost of cutting people off mid-sentence when they pause to think. The recognizer process stays resident between utterances so the model load cost is paid once, and is released after `workerIdleShutdownMs` without a session.
+
+The table covers listening only. Starting carries its own cost: the request that names the session runs to completion first, bounded by `titleMaxOutputTokens` and usually under a second, and the first utterance additionally pays the recognizer process's model load.
 
 ## Browser support
 

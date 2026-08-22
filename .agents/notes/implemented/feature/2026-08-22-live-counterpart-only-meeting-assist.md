@@ -48,7 +48,9 @@ Starting a recognizer creates a new session and switches to it. Each transcript 
 
 This reverses an earlier decision to keep the interview in memory and write nothing. The reversal buys a reviewable, reloadable record and costs privacy: everything the counterpart said is on disk in plain text until the session is deleted. It also inherits the vocabulary rule every optional plugin's events live under — a build without this bundle refuses to reconstruct a session containing them, because `Session.append` exposes no way to mark an event ignorable. Removing the plugin makes past interview sessions unreadable, not merely unrendered.
 
-The session is named from the background material through the same model route, so it is identifiable in the session list without being opened. The rename is fire-and-forget: audio is already flowing when the title request returns, so a naming failure leaves the default name rather than delaying or failing a start. It uses `SessionTitleService.rename`, which pins the title as a user rename and stops automatic generation from scheduling — correct here, because an interview session has no user prompts for the automatic providers to work from.
+A listening run opens with its background material: `live-assist/started` is projected by its own `ConversationNodeDefinition` into a chat node that shows the material in full. Every answer request in the run carries exactly that text, so putting it in the conversation makes the run's inputs readable there instead of only in the log. Stopping and starting again in one session opens a second run, with its own material and its own node.
+
+The session is named from that material through the same model route, and the name is saved before the recognizer opens, so the session carries it from its first frame and is identifiable in the list. The start pays one model request for that; [naming before listening](2026-08-23-live-assist-named-before-listening.md) records why. A name is not worth failing a start over, so a missing `sessionTitle` service, a title the model declined to produce, and a failed request all leave the default name and continue to the recognizer; a naming cancelled by the session's own end is not logged as a failure, matching a cancelled answer. It uses `SessionTitleService.rename`, which pins the title as a user rename and stops automatic generation from scheduling — correct here, because an interview session has no user prompts for the automatic providers to work from.
 
 The panel collapses to one composer row while a recognizer runs: a status dot, what it is doing, pause, and stop. A session-scoped slot remounts when the session changes, so the capture and socket lifecycle lives in a controller outside React, and a start is a two-step handoff — the composer of the old session records the request, and whichever component mounts in the newly created session adopts it with that session's id.
 
@@ -79,6 +81,7 @@ A new session is created only when the current one already holds a conversation.
 - Serialized answers mean a burst of questions makes the later answers late. That is the deliberate trade against losing an answer entirely.
 - Everything the counterpart says is written to session storage in plain text. Audio never is: it is decoded in memory and handed to the model as an array.
 - The answer stream is logged one delta at a time, mirroring `assistant/chunk`, so a long interview's log is dominated by answer fragments.
+- The background material is in the conversation in plain text. Sharing an entire screen exposes it exactly as it exposes the panel.
 
 ## Testing
 

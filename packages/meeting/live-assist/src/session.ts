@@ -93,32 +93,41 @@ export class LiveSession {
     this.opened = true
     this.background = background
     target.append('live-assist/started', { background })
+    await this.nameSession(target, background)
+    // Naming is awaited, so the panel can close the socket while a start is still in it. Read the
+    // lifetime rather than `closed`, exactly as a queued answer does.
+    if (this.lifetime.signal.aborted) return
     await this.worker.open(this.id, (event) => { this.onWorkerEvent(target, event) })
     this.send({ type: 'ready', recognizer: this.id })
-    this.nameSession(target, background)
   }
 
   /**
-   * Name the session after the background material, without delaying the recognizer.
+   * Name the session after the background material before the recognizer opens.
    *
-   * The rename is fire-and-forget on purpose: audio is already flowing by the time the title
-   * request returns, and a session that keeps its default name is a cosmetic loss, not a
-   * reason to fail a start or hold up the first question.
+   * The title request runs to completion first, so the session carries its name from its first
+   * frame and the conversation is identifiable in the list before a single word is transcribed.
+   * The cost is start latency: the panel stays on its connecting state for one model request,
+   * during which the counterpart is not yet being listened to.
+   *
+   * A name is not worth failing a start over, so an unavailable `sessionTitle` service, a title
+   * the model declined to produce, and a failed request all leave the default name and continue
+   * to the recognizer.
    */
-  private nameSession(target: Session, background: string): void {
+  private async nameSession(target: Session, background: string): Promise<void> {
     const titles = this.ctx.get('sessionTitle')
     if (titles === undefined) return
-    this.tail = this.tail.then(async () => {
-      try {
-        const title = await generateTitle(this.ctx, this.config, background, this.lifetime.signal)
-        if (title === undefined) return
-        // Renaming a session that is no longer live throws; a title that lost the race is dropped.
-        if (this.lifetime.signal.aborted) return
-        titles.rename(target, title)
-      } catch (error) {
-        this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
+    try {
+      const title = await generateTitle(this.ctx, this.config, background, this.lifetime.signal)
+      if (title === undefined) return
+      // Renaming a session that is no longer live throws; a title that lost the race is dropped.
+      if (this.lifetime.signal.aborted) return
+      titles.rename(target, title)
+    } catch (error) {
+      // Disposal aborts the request in flight, exactly as it does an answer; a naming cancelled
+      // by the session ending is not a failure worth reporting.
+      if (this.lifetime.signal.aborted) return
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+    }
   }
 
   /**

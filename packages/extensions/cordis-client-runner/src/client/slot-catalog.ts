@@ -252,6 +252,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-goal GoalCommandInputView key \'command-input\'',
       'client-ui-tool ToolCallTree key \'tool-call\'',
       'client-ui-workflow-run WorkflowRunPanel key \'workflow-run\'',
+      'live-assist BackgroundCard',
       'live-assist ExchangeCard',
     ],
     replaceRisk: 'shadows-shipped-ui',

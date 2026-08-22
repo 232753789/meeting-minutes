@@ -3,6 +3,8 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { BACKGROUND_KIND, backgroundDefinition } from './background-definition.ts'
+import { BackgroundCard } from './BackgroundCard.tsx'
 import { EXCHANGE_KIND, exchangeDefinition } from './exchange-definition.ts'
 import { ExchangeCard } from './ExchangeCard.tsx'
 import { LiveAssistButton } from './LiveAssistButton.tsx'
@@ -30,7 +32,13 @@ export function apply(ctx: ClientContext): void {
   const controller = new LiveAssistController()
   ctx.effect(() => () => { controller.stop() }, 'live-assist: recognizer lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'live-assist: dictionaries')
+  ctx.conversationEvents.register(backgroundDefinition)
   ctx.conversationEvents.register(exchangeDefinition)
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: BACKGROUND_KIND,
+    locale: NS,
+  }, BackgroundCard))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: EXCHANGE_KIND,

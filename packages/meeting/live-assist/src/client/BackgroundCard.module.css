@@ -1,0 +1,4 @@
+.background { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--dsh-border-secondary, #e3e3e6); background: var(--dsh-fill-secondary, #f1f1f3); }
+.title { font-size: 12px; font-weight: 600; color: var(--dsh-text-secondary, #666); }
+.material { font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty { font-size: 13px; color: var(--dsh-text-tertiary, #999); font-style: italic; }

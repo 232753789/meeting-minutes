@@ -526,7 +526,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * Opens one listening run: the background material every answer request in this session
  * carries. Logged because it reaches the model, so the request is reconstructable from the
- * log; log-only and non-surface, like everything else this plugin appends.
+ * log; log-only and non-surface, like everything else this plugin appends. The conversation
+ * renders it as its own chat node, so the run's inputs are readable there in full.
  */
 'live-assist/started': { background: string }
 ```

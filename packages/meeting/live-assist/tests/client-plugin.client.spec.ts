@@ -37,10 +37,15 @@ describe('live-assist client plugin', () => {
 
     expect(registerLocale).toHaveBeenCalledWith('live-assist', { zh, en })
     expect(registerDefinition).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'live-assist-background',
+      target: 'chat',
+    }))
+    expect(registerDefinition).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'live-assist-exchange',
       target: 'chat',
     }))
     expect(registrations).toEqual([
+      expect.objectContaining({ name: 'conversation.chat.node', key: 'live-assist-background' }),
       expect.objectContaining({ name: 'conversation.chat.node', key: 'live-assist-exchange' }),
       expect.objectContaining({ name: 'conversation.input.left', id: 'live-assist' }),
     ])

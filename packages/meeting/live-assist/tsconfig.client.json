@@ -6,9 +6,11 @@
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
   "files": [
+    "src/client/BackgroundCard.tsx",
     "src/client/ExchangeCard.tsx",
     "src/client/LiveAssistButton.tsx",
     "src/client/audio-capture.ts",
+    "src/client/background-definition.ts",
     "src/client/contract.ts",
     "src/client/exchange-definition.ts",
     "src/client/index.ts",

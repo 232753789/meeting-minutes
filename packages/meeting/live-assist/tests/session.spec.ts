@@ -14,9 +14,12 @@ class FakeWorker {
   listener: WorkerListener | undefined
   readonly frames: Buffer[] = []
   readonly closed: string[] = []
+  /** Records the open, so a test can assert what already ran when audio was first accepted. */
+  trace: string[] | undefined
 
   open(_session: string, listener: WorkerListener): Promise<void> {
     this.listener = listener
+    this.trace?.push('open')
     return Promise.resolve()
   }
 
@@ -457,15 +460,36 @@ describe('LiveSession session naming', () => {
     await session.dispose()
   })
 
-  it('does not rename a session whose start was already disposed', async () => {
-    const renamed: string[] = []
-    const { session } = await harness(
-      [{ deltas: ['标题'] }],
-      {},
-      { titles: { rename: (_target, title) => { renamed.push(title) } } },
+  it('saves the title before the recognizer accepts any audio', async () => {
+    const order: string[] = []
+    const config = resolveConfig({ localModelPath: await modelDirectory() })
+    const { ctx } = llmContext([{ deltas: ['信贷风控面试'] }])
+    Object.assign(ctx, {
+      get: (name: string) => (name === 'sessionTitle'
+        ? { rename: (_target: unknown, title: string) => { order.push(`rename:${title}`) } }
+        : undefined),
+    })
+    const worker = new FakeWorker()
+    worker.trace = order
+    const target = new FakeTargetSession()
+    const session = new LiveSession(
+      ctx,
+      config,
+      worker as unknown as LiveAsrWorker,
+      LiveSessionId('s1'),
+      () => {},
     )
+    await session.start('五年 Go，做信贷风控', target as unknown as Session)
+    // The session is named and identifiable in the list before a single word is transcribed.
+    expect(order).toEqual(['rename:信贷风控面试', 'open'])
     await session.dispose()
-    expect(renamed).toEqual([])
+  })
+
+  it('starts listening under the default name when no title service is mounted', async () => {
+    const { session, worker, sent } = await harness([{ deltas: ['ANSWER\n答'] }])
+    expect(sent.map(message => message.type)).toEqual(['ready'])
+    expect(worker.listener).toBeDefined()
+    await session.dispose()
   })
 })
 
@@ -492,19 +516,61 @@ describe('LiveSession naming raced against disposal', () => {
       },
     }
     const target = new FakeTargetSession()
+    const worker = new FakeWorker()
     const session = new LiveSession(
       ctx as never,
       config,
-      new FakeWorker() as unknown as LiveAsrWorker,
+      worker as unknown as LiveAsrWorker,
       LiveSessionId('s1'),
       () => {},
     )
-    await session.start('五年 Go', target as unknown as Session)
+    const starting = session.start('五年 Go', target as unknown as Session)
     const disposal = session.dispose()
     release?.()
+    await starting
     await disposal
-    // Renaming a session that is no longer live would throw; the title is simply dropped.
+    // Renaming a session that is no longer live would throw; the title is simply dropped, and a
+    // naming the session's own end cancelled is not reported as a failure.
     expect(renamed).toEqual([])
+    expect(warned).toEqual([])
+    // A start disposal overtook never opens the recognizer.
+    expect(worker.listener).toBeUndefined()
+  })
+
+  it('does not report a naming request the session end aborted', async () => {
+    const config = resolveConfig({ localModelPath: await modelDirectory() })
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const warned: unknown[] = []
+    const ctx = {
+      logger: { warn: (value: unknown) => { warned.push(value) } },
+      get: (name: string) => (name === 'sessionTitle' ? { rename: () => {} } : undefined),
+      agentDefaultModel: { currentSelection: () => ({ provider: 'fake', model: 'fake-model' }) },
+      llm: {
+        stream: () => (async function* replay() {
+          await gate
+          // How a real route reports the deadline the session's own abort tripped.
+          throw new Error('aborted')
+          // eslint-disable-next-line no-unreachable -- the generator needs a yield to be one
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        })(),
+      },
+    }
+    const target = new FakeTargetSession()
+    const worker = new FakeWorker()
+    const session = new LiveSession(
+      ctx as never,
+      config,
+      worker as unknown as LiveAsrWorker,
+      LiveSessionId('s1'),
+      () => {},
+    )
+    const starting = session.start('五年 Go', target as unknown as Session)
+    const disposal = session.dispose()
+    release?.()
+    await starting
+    await disposal
+    // A cancelled naming is not a failure, exactly as a cancelled answer is not.
     expect(warned).toEqual([])
   })
 })

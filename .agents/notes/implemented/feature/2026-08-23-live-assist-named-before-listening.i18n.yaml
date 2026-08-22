@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-live-assist-named-before-listening.md
+2026-08-23-live-assist-named-before-listening.md: 98480dd673b87e4da6e173c9c13c0401b7a26d8b
+2026-08-23-live-assist-named-before-listening.zh.md: 056004df31190621907c7124a7bc743b1f893442
