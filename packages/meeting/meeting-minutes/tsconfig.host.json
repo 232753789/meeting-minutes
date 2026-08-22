@@ -41,6 +41,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../subprocess/ndjson-worker"
+    },
+    {
       "path": "../../subprocess/subprocess"
     },
     {
@@ -51,6 +54,9 @@
     },
     {
       "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../util/loopback-request"
     },
     {
       "path": "../../util/timeout"

@@ -110,7 +110,7 @@ export const Config: z<Config> = z.object({
   language: z.string().default('Chinese'),
   asrChunkSeconds: z.number().step(1).min(1).default(300),
   asrRequestTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(1_800_000),
-  asrIdleShutdownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(120_000),
+  asrIdleShutdownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(300_000),
   asrMaxOutputTokens: z.number().step(1).min(1).default(2_048),
   remoteEndpoint: z.string().default(DEFAULT_REMOTE_ENDPOINT),
   remoteModel: z.string().default(DEFAULT_REMOTE_MODEL),
@@ -187,7 +187,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   )
   const asrIdleShutdownMs = positiveInteger(
     'asrIdleShutdownMs',
-    config.asrIdleShutdownMs ?? 120_000,
+    config.asrIdleShutdownMs ?? 300_000,
     MAX_TIMER_DELAY_MS,
   )
   const asrMaxOutputTokens = positiveInteger('asrMaxOutputTokens', config.asrMaxOutputTokens ?? 2_048)

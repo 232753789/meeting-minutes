@@ -1,0 +1,65 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/answer.ts",
+    "src/config.ts",
+    "src/events.ts",
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/lifecycle.ts",
+    "src/protocol.ts",
+    "src/session.ts",
+    "src/title.ts",
+    "src/worker.ts",
+    "src/ws.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../session/session-title"
+    },
+    {
+      "path": "../../subprocess/ndjson-worker"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../util/loopback-request"
+    },
+    {
+      "path": "../../util/timeout"
+    }
+  ]
+}

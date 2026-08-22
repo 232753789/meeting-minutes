@@ -3,11 +3,8 @@
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createInterface } from 'node:readline'
-import type { Interface as ReadlineInterface } from 'node:readline'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-subprocess'
+import { NdjsonWorker } from '@deepseek-ai/dsh-ndjson-worker'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedConfig } from './config.ts'
 
@@ -58,32 +55,34 @@ function parseWorkerResponse(line: string): WorkerResponse {
  * lazy start.
  */
 export class LocalAsrWorker {
-  private handle: SubprocessHandle | undefined
-  private lines: ReadlineInterface | undefined
-  private starting: Promise<SubprocessHandle> | undefined
-  private stopping: Promise<void> | undefined
-  private idleTimer: ReturnType<typeof setTimeout> | undefined
+  private readonly process: NdjsonWorker
   private readonly pending = new Map<number, PendingRequest>()
   private nextId = 1
   private closed = false
 
-  constructor(private readonly ctx: Context, private readonly config: ResolvedConfig) {}
-
-  private clearIdleShutdown(): void {
-    if (this.idleTimer === undefined) return
-    clearTimeout(this.idleTimer)
-    this.idleTimer = undefined
-  }
-
-  /** Start the idle countdown once a live process owes nothing; unref'd so it never holds the loop open. */
-  private armIdleShutdown(): void {
-    this.clearIdleShutdown()
-    if (this.closed || this.handle === undefined || this.pending.size > 0) return
-    this.idleTimer = setTimeout(() => {
-      this.idleTimer = undefined
-      void this.stopCurrent()
-    }, this.config.asrIdleShutdownMs)
-    this.idleTimer.unref()
+  /**
+   * @param ctx - plugin context owning the subprocess.
+   * @param config - resolved ASR settings frozen into the process arguments.
+   */
+  constructor(ctx: Context, private readonly config: ResolvedConfig) {
+    this.process = new NdjsonWorker(ctx, {
+      executable: config.pythonExecutable,
+      args: [
+        WORKER_PATH,
+        '--model', config.localModelPath,
+        '--device', config.localDevice,
+        '--max-new-tokens', String(config.asrMaxOutputTokens),
+      ],
+      cwd: dirname(WORKER_PATH),
+      label: 'meeting-minutes: local ASR worker',
+      idleShutdownMs: config.asrIdleShutdownMs,
+      graceMs: PROCESS_GRACE_MS,
+      diagnosticBytes: WORKER_DIAGNOSTIC_BYTES,
+    }, {
+      onLine: (line) => { this.onLine(line) },
+      onFailure: (error) => { this.rejectPending(error) },
+      isIdle: () => this.pending.size === 0,
+    })
   }
 
   private rejectPending(error: Error): void {
@@ -97,7 +96,7 @@ export class LocalAsrWorker {
       response = parseWorkerResponse(line)
     } catch (error) {
       this.rejectPending(asError(error))
-      void this.stopCurrent()
+      void this.process.stop()
       return
     }
     const pending = this.pending.get(response.id)
@@ -107,80 +106,6 @@ export class LocalAsrWorker {
     else pending.reject(new Error(`meeting-minutes: local ASR failed: ${response.error as string}`))
   }
 
-  private async start(): Promise<SubprocessHandle> {
-    if (this.closed) throw new Error('meeting-minutes: local ASR worker is closed')
-    if (this.stopping !== undefined) await this.stopping
-    if (this.handle !== undefined) return this.handle
-    this.starting ??= (async () => {
-      const python = await this.ctx.subprocess.resolveExecutable(this.config.pythonExecutable)
-      const handle = this.ctx.subprocess.spawn({
-        argv: [
-          python,
-          WORKER_PATH,
-          '--model', this.config.localModelPath,
-          '--device', this.config.localDevice,
-          '--max-new-tokens', String(this.config.asrMaxOutputTokens),
-        ],
-        cwd: dirname(WORKER_PATH),
-        stdio: {
-          stdin: 'pipe',
-          stdout: 'pipe',
-          stderr: { maxBytes: WORKER_DIAGNOSTIC_BYTES },
-        },
-        graceMs: PROCESS_GRACE_MS,
-      })
-      if (handle.stdin === undefined || handle.stdout === undefined) {
-        handle.terminate()
-        await handle.waitForExit()
-        throw new Error('meeting-minutes: local ASR worker did not expose piped stdio')
-      }
-      const lines = createInterface({ input: handle.stdout, crlfDelay: Infinity })
-      lines.on('line', (line) => { this.onLine(line) })
-      this.lines = lines
-      this.handle = handle
-      void handle.done.then((outcome) => {
-        if (this.handle !== handle) return
-        this.clearIdleShutdown()
-        this.lines?.close()
-        this.lines = undefined
-        this.handle = undefined
-        const stderr = handle.collected.stderr?.readFrom(0).text.trim()
-        this.rejectPending(new Error(
-          `meeting-minutes: local ASR worker exited with ${String(outcome.exitCode)}`
-          + (stderr === undefined || stderr === '' ? '' : `: ${stderr}`),
-        ))
-      }, (error: unknown) => {
-        if (this.handle !== handle) return
-        this.clearIdleShutdown()
-        this.lines?.close()
-        this.lines = undefined
-        this.handle = undefined
-        this.rejectPending(asError(error))
-      })
-      return handle
-    })()
-    try {
-      return await this.starting
-    } finally {
-      this.starting = undefined
-    }
-  }
-
-  private stopCurrent(): Promise<void> {
-    this.clearIdleShutdown()
-    if (this.stopping !== undefined) return this.stopping
-    const handle = this.handle
-    if (handle === undefined) return Promise.resolve()
-    this.handle = undefined
-    this.lines?.close()
-    this.lines = undefined
-    this.stopping = (async () => {
-      handle.terminate()
-      await handle.waitForExit()
-    })().finally(() => { this.stopping = undefined })
-    return this.stopping
-  }
-
   /**
    * Transcribe one WAV chunk, terminating the process when cancellation wins.
    * @param audioPath - absolute path to the normalized WAV chunk.
@@ -188,8 +113,9 @@ export class LocalAsrWorker {
    * @returns the non-empty transcript text.
    */
   async transcribe(audioPath: string, signal: AbortSignal): Promise<string> {
-    this.clearIdleShutdown()
-    const handle = await this.start()
+    if (this.closed) throw new Error('meeting-minutes: local ASR worker is closed')
+    this.process.clearIdleShutdown()
+    await this.process.ensureStarted()
     using requestDeadline = deadline(signal, this.config.asrRequestTimeoutMs, ASR_TIMEOUT_CODE)
     requestDeadline.signal.throwIfAborted()
     const id = this.nextId++
@@ -199,40 +125,28 @@ export class LocalAsrWorker {
         if (settled) return
         settled = true
         requestDeadline.signal.removeEventListener('abort', onAbort)
-        this.armIdleShutdown()
+        this.process.armIdleShutdown()
         callback()
       }
       const onAbort = (): void => {
         this.pending.delete(id)
         finish(() => { reject(asError(requestDeadline.signal.reason)) })
-        void this.stopCurrent()
+        void this.process.stop()
       }
       this.pending.set(id, {
         resolve: (text) => { finish(() => { resolve(text) }) },
         reject: (error) => { finish(() => { reject(error) }) },
       })
       requestDeadline.signal.addEventListener('abort', onAbort, { once: true })
-      const request = JSON.stringify({ id, audio: audioPath, language: this.config.language })
-      handle.stdin?.write(`${request}\n`, (error) => {
-        if (error === null || error === undefined) return
-        this.pending.delete(id)
-        finish(() => { reject(error) })
-        void this.stopCurrent()
-      })
+      this.process.write({ id, audio: audioPath, language: this.config.language })
     })
   }
 
   /** Stop the worker and await process-tree quiescence. */
   async dispose(): Promise<void> {
     this.closed = true
-    this.clearIdleShutdown()
     this.rejectPending(new Error('meeting-minutes: local ASR worker disposed'))
-    try {
-      await this.starting
-    } catch {
-      // A failed start owns no live process; the caller is already disposing.
-    }
-    await this.stopCurrent()
+    await this.process.dispose()
   }
 }
 

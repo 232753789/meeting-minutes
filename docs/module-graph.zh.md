@@ -14,6 +14,7 @@ flowchart TD
     pkg_brand["brand"]
     pkg_home_paths["home-paths"]
     pkg_launch_environment["launch-environment"]
+    pkg_loopback_request["loopback-request"]
     pkg_native_command["native-command"]
     pkg_output_retention["output-retention"]
     pkg_timeout["timeout"]
@@ -237,6 +238,10 @@ flowchart TD
   subgraph group_mcp["packages/mcp"]
     pkg_mcp_client["mcp-client"]
   end
+  subgraph group_meeting["packages/meeting"]
+    pkg_live_assist["live-assist"]
+    pkg_meeting_minutes["meeting-minutes"]
+  end
   subgraph group_preset["packages/preset"]
     pkg_agent_presets["agent-presets"]
     pkg_persona["persona"]
@@ -295,6 +300,7 @@ flowchart TD
     pkg_storage_sqlite["storage-sqlite"]
   end
   subgraph group_subprocess["packages/subprocess"]
+    pkg_ndjson_worker["ndjson-worker"]
     pkg_subprocess["subprocess"]
     pkg_subprocess_local["subprocess-local"]
   end
@@ -330,6 +336,7 @@ flowchart TD
   pkg_brand --> pkg_invariants
   pkg_home_paths --> pkg_invariants
   pkg_launch_environment --> pkg_invariants
+  pkg_loopback_request --> pkg_invariants
   pkg_native_command --> pkg_invariants
   pkg_output_retention --> pkg_invariants
   pkg_timeout --> pkg_invariants
@@ -386,6 +393,8 @@ flowchart TD
   pkg_storage_json --> pkg_storage
   pkg_storage_sqlite --> pkg_invariants
   pkg_storage_sqlite --> pkg_storage
+  pkg_ndjson_worker --> pkg_invariants
+  pkg_ndjson_worker --> pkg_subprocess
   pkg_subprocess_local --> pkg_invariants
   pkg_subprocess_local --> pkg_subprocess
   pkg_subprocess_local --> pkg_timeout
@@ -1368,6 +1377,40 @@ flowchart TD
   pkg_host_directory_picker_auto --> pkg_host_directory_picker_native
   pkg_host_directory_picker_auto --> pkg_host_webserver
   pkg_host_directory_picker_auto --> pkg_invariants
+  pkg_live_assist --> pkg_agent_default_model
+  pkg_live_assist --> pkg_brand
+  pkg_live_assist --> pkg_client_locale
+  pkg_live_assist --> pkg_client_runtime
+  pkg_live_assist --> pkg_client_ui_conversation
+  pkg_live_assist --> pkg_client_ui_primitives
+  pkg_live_assist --> pkg_client_ui_slots
+  pkg_live_assist --> pkg_home_paths
+  pkg_live_assist --> pkg_host_webserver
+  pkg_live_assist --> pkg_invariants
+  pkg_live_assist --> pkg_llm
+  pkg_live_assist --> pkg_loopback_request
+  pkg_live_assist --> pkg_ndjson_worker
+  pkg_live_assist --> pkg_subprocess
+  pkg_live_assist --> pkg_timeout
+  pkg_meeting_minutes --> pkg_agent_default_model
+  pkg_meeting_minutes --> pkg_atomic_write
+  pkg_meeting_minutes --> pkg_brand
+  pkg_meeting_minutes --> pkg_client_locale
+  pkg_meeting_minutes --> pkg_client_runtime
+  pkg_meeting_minutes --> pkg_client_ui_conversation
+  pkg_meeting_minutes --> pkg_client_ui_primitives
+  pkg_meeting_minutes --> pkg_client_ui_settings
+  pkg_meeting_minutes --> pkg_client_ui_settings_plugins
+  pkg_meeting_minutes --> pkg_client_ui_slots
+  pkg_meeting_minutes --> pkg_home_paths
+  pkg_meeting_minutes --> pkg_host_webserver
+  pkg_meeting_minutes --> pkg_invariants
+  pkg_meeting_minutes --> pkg_llm
+  pkg_meeting_minutes --> pkg_loopback_request
+  pkg_meeting_minutes --> pkg_ndjson_worker
+  pkg_meeting_minutes --> pkg_settings
+  pkg_meeting_minutes --> pkg_subprocess
+  pkg_meeting_minutes --> pkg_timeout
   pkg_session_log_export --> pkg_client_locale
   pkg_session_log_export --> pkg_client_runtime
   pkg_session_log_export --> pkg_client_ui_commands
@@ -1427,6 +1470,7 @@ flowchart TD
 | [`brand`](../packages/util/brand) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`home-paths`](../packages/util/home-paths) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`launch-environment`](../packages/util/launch-environment) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`loopback-request`](../packages/util/loopback-request) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`native-command`](../packages/util/native-command) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`output-retention`](../packages/util/output-retention) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`timeout`](../packages/util/timeout) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
@@ -1466,6 +1510,7 @@ flowchart TD
 | [`storage-domain`](../packages/storage/storage-domain) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants), [`storage`](../packages/storage/storage) |
 | [`storage-json`](../packages/storage/storage-json) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants), [`storage`](../packages/storage/storage) |
 | [`storage-sqlite`](../packages/storage/storage-sqlite) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants), [`storage`](../packages/storage/storage) |
+| [`ndjson-worker`](../packages/subprocess/ndjson-worker) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants), [`subprocess`](../packages/subprocess/subprocess) |
 | [`subprocess-local`](../packages/subprocess/subprocess-local) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`typert-loader`](../packages/typert/loader) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants), [`typert-registry`](../packages/typert/registry) |
 | [`llm`](../packages/llm/llm) | `llm` | [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout) |
@@ -1636,6 +1681,8 @@ flowchart TD
 | [`client-ui-tool`](../packages/client/ui-tool) | `client` | [`api-remotes`](../packages/api/remotes), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-workflow-run`](../packages/client/ui-workflow-run) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`tool-workflow`](../packages/workflow/tool-workflow), [`workflow`](../packages/workflow/workflow) |
 | [`host-directory-picker-auto`](../packages/host/directory-picker-auto) | `host` | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse), [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse), [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`live-assist`](../packages/meeting/live-assist) | `meeting` | [`agent-default-model`](../packages/core/agent-default-model), [`brand`](../packages/util/brand), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`home-paths`](../packages/util/home-paths), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`loopback-request`](../packages/util/loopback-request), [`ndjson-worker`](../packages/subprocess/ndjson-worker), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
+| [`meeting-minutes`](../packages/meeting/meeting-minutes) | `meeting` | [`agent-default-model`](../packages/core/agent-default-model), [`atomic-write`](../packages/util/atomic-write), [`brand`](../packages/util/brand), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-settings-plugins`](../packages/client/ui-settings-plugins), [`client-ui-slots`](../packages/client/ui-slots), [`home-paths`](../packages/util/home-paths), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`loopback-request`](../packages/util/loopback-request), [`ndjson-worker`](../packages/subprocess/ndjson-worker), [`settings`](../packages/settings/settings), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`commands`](../packages/interaction/commands), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-model-selection`](../packages/client/ui-model-selection) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-permission-presets`](../packages/client/ui-permission-presets) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-schema-form`](../packages/client/schema-form), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/runtime-diagnostics/invariants), [`permission-presets`](../packages/interaction/permission-presets) |

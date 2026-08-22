@@ -838,6 +838,60 @@ export interface Config {
 
 来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-live-assist"></a>
+
+## `@deepseek-ai/dsh-live-assist`
+
+需要：`webServer` · `subprocess` · `llm` · `agentDefaultModel` · `sessions`
+
+```ts config-catalog
+/** Host plugin configuration. */
+export interface Config {
+  /** Complete local Qwen3-ASR model directory. */
+  localModelPath?: string
+  /** Python executable hosting the persistent recognizer worker. */
+  pythonExecutable?: string
+  /** Local inference device; auto tries CUDA, then MPS, then CPU. */
+  localDevice?: 'auto' | 'cuda' | 'mps' | 'cpu'
+  /** Qwen ASR language name, or `auto` for language detection. */
+  language?: string
+  /** Generated-token cap for each transcribed utterance. */
+  asrMaxOutputTokens?: number
+  /** silero-vad speech probability above which a window counts as speech. */
+  vadThreshold?: number
+  /** Trailing silence that ends an utterance; the dominant term in answer latency. */
+  vadMinSilenceMs?: number
+  /** Audio kept on each side of a detected utterance. */
+  vadSpeechPadMs?: number
+  /** Shortest speech, excluding padding, that is transcribed rather than discarded as noise. */
+  minUtteranceMs?: number
+  /** Longest uninterrupted speech before it is cut and transcribed anyway. */
+  maxUtteranceMs?: number
+  /** Explicit answer route; omission uses the current default Agent route. */
+  answerProvider?: string
+  /** Explicit answer model; must be paired with answerProvider. */
+  answerModel?: string
+  /** Output-token cap for each answer. */
+  answerMaxOutputTokens?: number
+  /** Output-token cap for the session title derived from the background material. */
+  titleMaxOutputTokens?: number
+  /** Deadline for each answer request. */
+  answerRequestTimeoutMs?: number
+  /** Largest accepted background-material document. */
+  maxBackgroundBytes?: number
+  /** Answered questions retained as context for the next answer. */
+  historyTurns?: number
+  /** Newest interviewee-typed messages in the session that steer later answers. */
+  noteTurns?: number
+  /** Concurrent live sessions this Host accepts. */
+  maxSessions?: number
+  /** Idle time after which the recognizer process is stopped, releasing accelerator memory. */
+  workerIdleShutdownMs?: number
+}
+```
+
+来源：[`packages/meeting/live-assist/src/config.ts:10`](../packages/meeting/live-assist/src/config.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`
@@ -3196,7 +3250,9 @@ export interface Config {
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）
 - `@deepseek-ai/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
+- `@deepseek-ai/dsh-loopback-request`（[`packages/util/loopback-request/src/index.ts`](../packages/util/loopback-request/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
+- `@deepseek-ai/dsh-ndjson-worker`（[`packages/subprocess/ndjson-worker/src/index.ts`](../packages/subprocess/ndjson-worker/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）

@@ -53,7 +53,7 @@ model-00001-of-00002.safetensors
 model-00002-of-00002.safetensors
 ```
 
-Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片与会议之间常驻复用模型。该进程把整个模型保留在设备内存中，因此在没有分片处理的时间超过 `asrIdleShutdownMs`（默认两分钟）后会被终止；下一个分片重新启动进程并再次承担加载开销，所以在加载缓慢的主机上应调大该值，需要更早释放加速设备内存时调小它。它通过 `qwen-asr` 直接加载 Hugging Face 模型文件，本地推理路径不经过 Ollama。`localDevice: auto` 依次尝试 CUDA、Apple MPS 和 CPU；只有 `auto` 模式会在加速设备加载失败时转到 CPU，本地 ASR 绝不会自动转用远程 endpoint。Qwen 上游示例主要面向 CUDA，因此正式处理长会议之前，应先用短录音验证 MPS 的速度与内存占用。
+Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片与会议之间常驻复用模型。该进程把整个模型保留在设备内存中，因此在没有分片处理的时间超过 `asrIdleShutdownMs`（默认五分钟）后会被终止；下一个分片重新启动进程并再次承担加载开销，所以在加载缓慢的主机上应调大该值，需要更早释放加速设备内存时调小它。它通过 `qwen-asr` 直接加载 Hugging Face 模型文件，本地推理路径不经过 Ollama。`localDevice: auto` 依次尝试 CUDA、Apple MPS 和 CPU；只有 `auto` 模式会在加速设备加载失败时转到 CPU，本地 ASR 绝不会自动转用远程 endpoint。Qwen 上游示例主要面向 CUDA，因此正式处理长会议之前，应先用短录音验证 MPS 的速度与内存占用。
 
 ## 配置
 
@@ -70,7 +70,7 @@ Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片�
     language: Chinese
     asrChunkSeconds: 300
     asrRequestTimeoutMs: 1800000
-    asrIdleShutdownMs: 120000
+    asrIdleShutdownMs: 300000
     asrMaxOutputTokens: 2048
     remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
     remoteModel: Qwen/Qwen3-ASR-1.7B

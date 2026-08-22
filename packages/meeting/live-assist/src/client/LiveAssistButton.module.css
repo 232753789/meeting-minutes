@@ -1,0 +1,8 @@
+.bar { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; }
+.status { font-size: 13px; color: var(--dsh-text-secondary, #666); white-space: nowrap; }
+.description { margin: 0 0 8px; color: var(--dsh-text-secondary, #666); font-size: 13px; }
+.error { margin: 4px 0; color: var(--dsh-text-danger, #c0392b); font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 13px; }
+.textarea { width: 100%; resize: vertical; font: inherit; padding: 6px; }
+.hints { margin: 0 0 12px; padding-left: 18px; color: var(--dsh-text-secondary, #666); font-size: 12px; }
+.actions { display: flex; gap: 8px; }

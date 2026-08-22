@@ -4,9 +4,9 @@ import { randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, open, rm, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isIP } from 'node:net'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
+import { isLoopbackSameOriginRequest } from '@deepseek-ai/dsh-loopback-request'
 import type { MeetingMinutesRuntime } from './runtime.ts'
 import {
   isMeetingId,
@@ -39,44 +39,6 @@ class HttpError extends Error {
 function header(req: IncomingMessage, name: string): string | undefined {
   const value = req.headers[name]
   return typeof value === 'string' ? value : undefined
-}
-
-function hostUrl(authority: string): URL | undefined {
-  try {
-    return new URL(`http://${authority}`)
-  } catch {
-    return undefined
-  }
-}
-
-function isLoopback(hostname: string): boolean {
-  const normalized = hostname.toLowerCase()
-  if (normalized === 'localhost' || normalized.endsWith('.localhost') || normalized === '[::1]' || normalized === '::1') {
-    return true
-  }
-  if (isIP(normalized) !== 4) return false
-  const first = Number(normalized.split('.', 1)[0])
-  return first === 127
-}
-
-/**
- * Refuse DNS-rebound and cross-site browser access; this plugin intentionally serves loopback only.
- * @param req - incoming request before any body bytes are consumed.
- * @returns whether the Host and browser-origin headers satisfy the local-only policy.
- */
-export function isTrustedMeetingRequest(req: IncomingMessage): boolean {
-  const host = header(req, 'host')
-  if (host === undefined) return false
-  const parsedHost = hostUrl(host)
-  if (parsedHost === undefined || !isLoopback(parsedHost.hostname)) return false
-  if (header(req, 'sec-fetch-site') === 'cross-site') return false
-  const origin = header(req, 'origin')
-  if (origin === undefined) return true
-  try {
-    return new URL(origin).origin === parsedHost.origin
-  } catch {
-    return false
-  }
 }
 
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
@@ -187,7 +149,7 @@ export class MeetingHttpController {
 
   private async dispatch(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
-      if (!isTrustedMeetingRequest(req)) throw new HttpError(403, 'loopback same-origin access required')
+      if (!isLoopbackSameOriginRequest(req)) throw new HttpError(403, 'loopback same-origin access required')
       const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
       if (pathname === MEETINGS_PATH) {
         if (req.method === 'GET') {

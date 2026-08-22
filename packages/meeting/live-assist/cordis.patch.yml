@@ -1,0 +1,25 @@
+# Install this optional bundle after dsh-web-app. The row is absent from the
+# shipped Web profile until `dsh plugin --profile web add <package>` adds this
+# package to that profile's bundle list.
+- insert:
+    - id: live-assist
+      name: '@deepseek-ai/dsh-live-assist'
+      config:
+        localModelPath: !!js dshHomePath('models', 'Qwen3-ASR-1.7B')
+        pythonExecutable: python3
+        localDevice: auto
+        language: Chinese
+        asrMaxOutputTokens: 256
+        vadThreshold: 0.5
+        vadMinSilenceMs: 700
+        vadSpeechPadMs: 200
+        minUtteranceMs: 400
+        maxUtteranceMs: 20000
+        answerMaxOutputTokens: 800
+        titleMaxOutputTokens: 64
+        answerRequestTimeoutMs: 120000
+        maxBackgroundBytes: 32768
+        historyTurns: 8
+        noteTurns: 6
+        maxSessions: 2
+        workerIdleShutdownMs: 300000

@@ -34,6 +34,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/brand': 'The package is a type-only primitive erased at compile time.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
+  'packages/util/loopback-request': 'The package is a request-origin predicate a Host route calls before dispatch; it reaches no model request.',
+  'packages/subprocess/ndjson-worker': 'The package owns a child-process lifecycle; the protocol carried over its lines, and any model use of it, belongs to each caller.',
 }
 
 /**

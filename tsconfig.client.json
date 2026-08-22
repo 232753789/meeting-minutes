@@ -61,6 +61,7 @@
     { "path": "./packages/client/runtime" },
     { "path": "./packages/extensions/cordis-client-runner" },
     { "path": "./packages/meeting/meeting-minutes/tsconfig.client.json" },
+    { "path": "./packages/meeting/live-assist/tsconfig.client.json" },
     { "path": "./packages/extensions/ui-cordis" },
     { "path": "./packages/test-support/client-runtime" },
     { "path": "./packages/client/ui-layout" },

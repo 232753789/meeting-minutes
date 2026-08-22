@@ -470,6 +470,82 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:19`](../packages/hooks/hook-
 
 Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-protocol/src/types.ts)
 
+### `live-assist/*`
+
+<a id="live-assistanswer-delta--log-only"></a>
+
+#### `live-assist/answer-delta` — log-only
+
+```ts persistence-catalog
+/** One streamed fragment of the answer to `id`, in emission order. */
+'live-assist/answer-delta': { id: UtteranceId; text: string }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:23`](../packages/meeting/live-assist/src/events.ts)
+
+<a id="live-assistanswer-end--log-only"></a>
+
+#### `live-assist/answer-end` — log-only
+
+```ts persistence-catalog
+/** Answer generation for `id` finished normally. */
+'live-assist/answer-end': { id: UtteranceId }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:25`](../packages/meeting/live-assist/src/events.ts)
+
+<a id="live-assistanswer-start--log-only"></a>
+
+#### `live-assist/answer-start` — log-only
+
+```ts persistence-catalog
+/** Answer generation began for `id`; the following deltas carry its text. */
+'live-assist/answer-start': { id: UtteranceId }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:21`](../packages/meeting/live-assist/src/events.ts)
+
+<a id="live-assistskipped--log-only"></a>
+
+#### `live-assist/skipped` — log-only
+
+```ts persistence-catalog
+/** The utterance `id` needed no answer, for the stated reason. */
+'live-assist/skipped': { id: UtteranceId; reason: SkipReason }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:27`](../packages/meeting/live-assist/src/events.ts)
+
+<a id="live-assiststarted--log-only"></a>
+
+#### `live-assist/started` — log-only
+
+```ts persistence-catalog
+/**
+ * Opens one listening run: the background material every answer request in this session
+ * carries. Logged because it reaches the model, so the request is reconstructable from the
+ * log; log-only and non-surface, like everything else this plugin appends.
+ */
+'live-assist/started': { background: string }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:13`](../packages/meeting/live-assist/src/events.ts)
+
+<a id="live-assistutterance--log-only"></a>
+
+#### `live-assist/utterance` — log-only
+
+```ts persistence-catalog
+/**
+ * One completed counterpart utterance, as the recognizer transcribed it: log-only,
+ * non-surface, and never part of derived model history. `id` correlates it with the
+ * `live-assist/answer-*` events that answer it.
+ */
+'live-assist/utterance': { id: UtteranceId; text: string; seconds: number }
+```
+
+Source: [`packages/meeting/live-assist/src/events.ts:19`](../packages/meeting/live-assist/src/events.ts)
+
 ### `llm/*`
 
 <a id="llmretry--log-only"></a>

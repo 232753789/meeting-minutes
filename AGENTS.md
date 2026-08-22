@@ -23,7 +23,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   lsp/         language-server capability
   skill/       skill provider registry + local impl + catalog/loader tool
   web/         web capability: Service Definition + search/fetch providers + tool Consumer
-  meeting/     browser recording, Qwen ASR, and downloadable meeting minutes
+  meeting/     browser recording, Qwen ASR, meeting minutes, and live counterpart-only assist
   compaction/     compaction capability + basic provider
   context/     request-context plugins
   subagent/    subagent capability: Service Definition + providers + delegation Consumers

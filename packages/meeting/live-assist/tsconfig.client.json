@@ -1,0 +1,48 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "files": [
+    "src/client/ExchangeCard.tsx",
+    "src/client/LiveAssistButton.tsx",
+    "src/client/audio-capture.ts",
+    "src/client/contract.ts",
+    "src/client/exchange-definition.ts",
+    "src/client/index.ts",
+    "src/client/live-controller.ts",
+    "src/client/locales.ts",
+    "src/client/panel-state.ts",
+    "src/css-modules.d.ts",
+    "src/events.ts",
+    "src/protocol.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../client/locale"
+    },
+    {
+      "path": "../../client/runtime"
+    },
+    {
+      "path": "../../client/ui-conversation"
+    },
+    {
+      "path": "../../client/ui-primitives"
+    },
+    {
+      "path": "../../client/ui-slots"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../util/brand"
+    }
+  ]
+}

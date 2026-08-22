@@ -53,7 +53,7 @@ model-00001-of-00002.safetensors
 model-00002-of-00002.safetensors
 ```
 
-The Python process starts lazily on the first ASR chunk and retains the model for later chunks and meetings. It holds the whole model in device memory, so it is terminated once no chunk has been outstanding for `asrIdleShutdownMs` (two minutes by default); the next chunk starts it again and pays the load cost once more, so raise the value on hosts where loading is slow and lower it to release accelerator memory sooner. It loads the Hugging Face model files directly through `qwen-asr`; Ollama is not in this local inference path. `localDevice: auto` tries CUDA, then Apple MPS, then CPU. An accelerator load failure may fall back to CPU only in `auto` mode; local ASR never falls back to the remote endpoint. Qwen's upstream examples primarily target CUDA, so verify MPS throughput and memory with a short recording before relying on a long meeting.
+The Python process starts lazily on the first ASR chunk and retains the model for later chunks and meetings. It holds the whole model in device memory, so it is terminated once no chunk has been outstanding for `asrIdleShutdownMs` (five minutes by default); the next chunk starts it again and pays the load cost once more, so raise the value on hosts where loading is slow and lower it to release accelerator memory sooner. It loads the Hugging Face model files directly through `qwen-asr`; Ollama is not in this local inference path. `localDevice: auto` tries CUDA, then Apple MPS, then CPU. An accelerator load failure may fall back to CPU only in `auto` mode; local ASR never falls back to the remote endpoint. Qwen's upstream examples primarily target CUDA, so verify MPS throughput and memory with a short recording before relying on a long meeting.
 
 ## Configuration
 
@@ -70,7 +70,7 @@ The bundle defaults are in [`cordis.patch.yml`](cordis.patch.yml). A profile ove
     language: Chinese
     asrChunkSeconds: 300
     asrRequestTimeoutMs: 1800000
-    asrIdleShutdownMs: 120000
+    asrIdleShutdownMs: 300000
     asrMaxOutputTokens: 2048
     remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
     remoteModel: Qwen/Qwen3-ASR-1.7B

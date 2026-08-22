@@ -13,7 +13,7 @@
         language: Chinese
         asrChunkSeconds: 300
         asrRequestTimeoutMs: 1800000
-        asrIdleShutdownMs: 120000
+        asrIdleShutdownMs: 300000
         asrMaxOutputTokens: 2048
         remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
         remoteModel: Qwen/Qwen3-ASR-1.7B

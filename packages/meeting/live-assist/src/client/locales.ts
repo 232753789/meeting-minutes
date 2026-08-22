@@ -1,0 +1,64 @@
+/** Browser copy owned by the live-assist surface. */
+
+/** Simplified Chinese dictionary; its keys define {@link LiveAssistKey}. */
+export const zh = {
+  'action.open': '面试助手',
+  'action.close': '关闭',
+  'action.start': '开始监听',
+  'action.stop': '结束',
+  'action.pause': '暂停',
+  'action.resume': '继续',
+  'dialog.title': '实时面试助手',
+  'dialog.description': '只采集会议标签页播放的声音，不打开麦克风，因此你自己的发言不会进入转写。',
+  'field.background': '背景资料',
+  'field.backgroundHint': '简历、目标岗位、想强调的项目。只发送到本机，不会存盘。',
+  'hint.share': '点击开始后，在共享选择器里选择会议所在的**标签页**，并打开「分享标签页音频」。请全程保持共享。',
+  'hint.headphones': '请戴耳机。外放会让会议软件的回声消除干扰识别。',
+  'hint.screenShare': '如果你正在向对方共享整个屏幕，这个面板会被看到。共享单个窗口或标签页时才安全。',
+  'state.connecting': '正在连接…',
+  'state.listening': '聆听中',
+  'state.speaking': '对方正在说话',
+  'state.thinking': '正在组织回答…',
+  'exchange.heard': '听到 {seconds} 秒',
+  'hint.newSession': '对方的话与建议回答都记录在会话中，可以事后回看。当前会话已有对话时会先新建一个，空白会话则就地开始。',
+  'state.paused': '已暂停',
+  'answer.skipped': '这句话不需要作答',
+  'error.unsupported': '当前浏览器不支持捕获系统音频，请使用 Chrome 或 Edge。',
+  'error.share': '无法共享标签页音频：{message}',
+  'error.missingAudio': '本次共享没有包含音频。请重新开始，并在共享选择器里打开「分享标签页音频」。',
+  'error.socket': '与本机服务的连接中断：{message}',
+  'error.server': '{message}',
+}
+
+/** English dictionary, on the same keys as {@link zh}. */
+export const en = {
+  'action.open': 'Interview assist',
+  'action.close': 'Close',
+  'action.start': 'Start listening',
+  'action.stop': 'Stop',
+  'action.pause': 'Pause',
+  'action.resume': 'Resume',
+  'dialog.title': 'Live interview assist',
+  'dialog.description': 'Captures only what the meeting tab plays. The microphone is never opened, so your own speech stays out of the transcript.',
+  'field.background': 'Background material',
+  'field.backgroundHint': 'Résumé, target role, projects to emphasize. Sent to this machine only, and never written to disk.',
+  'hint.share': 'After you start, pick the **tab** running the meeting and turn on "Share tab audio". Keep the share open throughout.',
+  'hint.headphones': 'Wear headphones. Speakers make the meeting client\'s echo cancellation fight the recognizer.',
+  'hint.screenShare': 'If you are sharing your entire screen with the other side, this panel is visible to them. Sharing a single window or tab is what keeps it private.',
+  'state.connecting': 'Connecting…',
+  'state.listening': 'Listening',
+  'state.speaking': 'They are speaking',
+  'state.thinking': 'Composing an answer…',
+  'exchange.heard': '{seconds}s heard',
+  'hint.newSession': 'The transcript and every suggested answer are recorded in the session and can be reviewed afterwards. A session that already holds a conversation gets a new one first; a blank session is used in place.',
+  'state.paused': 'Paused',
+  'answer.skipped': 'No answer needed for this one',
+  'error.unsupported': 'This browser cannot capture system audio. Use Chrome or Edge.',
+  'error.share': 'Could not share tab audio: {message}',
+  'error.missingAudio': 'That share carried no audio. Start again and turn on "Share tab audio" in the picker.',
+  'error.socket': 'The connection to this machine dropped: {message}',
+  'error.server': '{message}',
+}
+
+/** Locale keys contributed by the live-assist Client plugin. */
+export type LiveAssistKey = keyof typeof zh
