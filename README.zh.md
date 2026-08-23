@@ -8,6 +8,8 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 ## 开发者预览
 
+<img width="1590" height="576" alt="Xnip2026-08-23_17-12-46" src="https://github.com/user-attachments/assets/1617cfd4-c361-4fbf-a225-2ceb67c7e479" />
+
 DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
 
 ## 运行
