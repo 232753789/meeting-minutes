@@ -4,5 +4,6 @@
 .error { margin: 4px 0; color: var(--dsh-text-danger, #c0392b); font-size: 13px; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 13px; }
 .textarea { width: 100%; resize: vertical; font: inherit; padding: 6px; }
+.notice { margin: 4px 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--dsh-fill-secondary, #f1f1f3); color: var(--dsh-text-secondary, #666); font-size: 12px; line-height: 1.6; }
 .hints { margin: 0 0 12px; padding-left: 18px; color: var(--dsh-text-secondary, #666); font-size: 12px; }
 .actions { display: flex; gap: 8px; }

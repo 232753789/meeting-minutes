@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-live-counterpart-only-meeting-assist.md
-2026-08-22-live-counterpart-only-meeting-assist.md: cba964da48c4200488b9449351b4d3fbd036dcfd
-2026-08-22-live-counterpart-only-meeting-assist.zh.md: 7a2cdcfd9263f00e17e1c032a06de9f9ee95da57
+2026-08-22-live-counterpart-only-meeting-assist.md: 8978b1b031bbef5b9b41a0bb8c5833a61b38d699
+2026-08-22-live-counterpart-only-meeting-assist.zh.md: 586b9dfc3831069488f41c7fc730d6bdc020c14b

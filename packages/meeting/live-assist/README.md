@@ -61,9 +61,9 @@ The plugin checks the same file list as [`dsh-meeting-minutes`](../meeting-minut
 ## Using it
 
 1. Open the **Interview assist** control in the composer, and paste your background material — résumé, target role, projects worth emphasizing. It is kept in browser storage and sent to this machine only.
-2. Press **Start listening**. A session that already holds a conversation gets a new dsh session first, switched to immediately, so the interview does not land in whatever conversation you had open; a blank session is listened in as it is, because that is the session New Session would land in anyway. In the browser's share picker, choose the **tab** running the meeting and turn on *Share tab audio*. Keep the share open for the whole call.
+2. Press **Start listening**. Listening happens in the session you have open; no other session is created. For an interview in a session of its own, create one before you start — and send a message in it, for the reason below. In the browser's share picker, choose the **tab** running the meeting and turn on *Share tab audio*. Keep the share open for the whole call.
 3. The dialog closes and the composer keeps one compact row: a status dot, what the recognizer is doing, **Pause**, and **Stop**. Everything else is the conversation.
-4. The material you just entered arrives in the conversation first, in full, and the session is named. Listening starts once both are done.
+4. The material you just entered arrives in the conversation first, in full, and the session is named. Listening starts once both are done. You can switch to another session while it runs — the recognizer is unaffected, and transcripts and answers keep landing in the session you started from.
 5. Each thing the counterpart says arrives as a message, with the answer suggested for it beneath it. The view scrolls with the newest exchange; scrolling up stops that, exactly as it does for an ordinary conversation.
 
 Every utterance gets its own answer. Answers are generated one at a time in the order the questions were heard, and a newer question never cancels the one being answered — the recognizer splits on silence, so a pause mid-sentence can end an utterance early, and cancelling would throw away the answer to the real question while leaving only the fragment that followed it. The cost is that answers queue: if the counterpart asks three things in a row, the third answer waits for the first two.
@@ -71,6 +71,8 @@ Every utterance gets its own answer. Answers are generated one at a time in the 
 The material this run was started with is written into the conversation verbatim, as a message of its own. Every answer request carries exactly that text, so it is neither truncated nor summarized: what is on screen is what the model was given.
 
 The session is named from that material by the same model route, and the name is saved before listening starts, so the session is identifiable in the list from its first frame. The cost is one model request of start latency: the panel stays on "Connecting…" through it, and the counterpart is not yet being listened to. A failed request, a title the model declined to produce, and a missing `sessionTitle` service all leave the default name and start listening anyway.
+
+**Send a message in a blank session before listening in it.** Whether a session counts as blank is derived from whether a turn has run in its log, and nothing this plugin appends opens a turn. A blank session holding an entire interview is therefore still blank: navigating away removes it from the session list, and the next New Session reuses it. Nothing is lost — the log is in `$DSH_HOME/sessions` — but the list does not show it. The setup dialog says so when the session you are in is blank.
 
 **Pause** withholds audio from the recognizer without dropping the session — use it while you are the one talking. **Stop** ends the share; the session stays and can be reopened from the session list.
 
@@ -176,3 +178,4 @@ Answer requests are independent of the Agent conversation and of one another. Th
 - The answer stream is written to the log one delta at a time, mirroring `assistant/chunk`. A long interview therefore produces a log dominated by answer fragments.
 - Answers are serialized, so a burst of questions makes the later answers late. Nothing merges an utterance the recognizer split mid-sentence, so a trailing fragment is answered as its own question; raising `vadMinSilenceMs` is the blunt way to reduce that.
 - Naming needs a `sessionTitle` service. Without one the session keeps its default name, and no title request is made.
+- Nothing this plugin appends clears a session's blank bit, which is derived from `turn/start` alone. An interview recorded in a blank session stays out of the session list and is reused by the next New Session; the dialog warns, but the fix would be a session-vocabulary change beyond this bundle.

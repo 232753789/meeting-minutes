@@ -36,13 +36,12 @@ function t(key: keyof typeof zh, params?: Record<string, unknown>): string {
 function stub(state: Partial<ControllerState>) {
   let current = { connected: false, speaking: false, running: false, paused: false, ...state } as ControllerState
   const listeners = new Set<() => void>()
-  const mocks = { adopt: vi.fn(), request: vi.fn(), stop: vi.fn(), togglePause: vi.fn() }
+  const mocks = { start: vi.fn(), stop: vi.fn(), togglePause: vi.fn() }
   return {
     mocks,
     controller: {
       subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
       getState: () => current,
-      awaiting: false,
       ...mocks,
     } as unknown as LiveAssistController,
     set: (next: Partial<ControllerState>) => {
@@ -55,20 +54,17 @@ function stub(state: Partial<ControllerState>) {
 function renderButton(overrides: {
   state?: Partial<ControllerState>
   sessionId?: SessionId
-  startSession?: () => void
   blank?: boolean
 } = {}) {
   const { controller, mocks } = stub(overrides.state ?? {})
-  const startSession = overrides.startSession ?? vi.fn()
   const props = {
     t,
     sessionId: overrides.sessionId ?? ('session-a' as SessionId),
     controller,
-    startSession,
     isBlankSession: () => overrides.blank ?? false,
   } as unknown as ComponentProps<typeof LiveAssistButton>
   render(<LiveAssistButton {...props} />)
-  return { controller, mocks, startSession }
+  return { controller, mocks }
 }
 
 beforeEach(() => {
@@ -90,52 +86,42 @@ describe('statusKey', () => {
 })
 
 describe('LiveAssistButton before listening', () => {
-  it('opens a setup dialog explaining the new session', () => {
+  it('opens a setup dialog explaining where the interview lands', () => {
     renderButton()
     fireEvent.click(screen.getByText(zh['action.open']))
     expect(screen.getByText(zh['hint.newSession'])).toBeTruthy()
     expect(screen.getByText(zh['hint.screenShare'])).toBeTruthy()
     expect(screen.getByRole('textbox')).toBeTruthy()
+    // Nothing to warn about: this session already holds a conversation.
+    expect(screen.queryByText(zh['hint.blankSession'])).toBeNull()
   })
 
-  it('opens the share picker on the click, then creates the session', async () => {
-    const startSession = vi.fn()
-    const { mocks } = renderButton({ sessionId: 'session-a' as SessionId, startSession })
+  it('warns that a blank session will not stay in the list', () => {
+    renderButton({ blank: true })
+    fireEvent.click(screen.getByText(zh['action.open']))
+    expect(screen.getByText(zh['hint.blankSession'])).toBeTruthy()
+  })
+
+  it('listens in the session it is already in, opening no other', async () => {
+    const { mocks } = renderButton({ sessionId: 'session-a' as SessionId })
     fireEvent.click(screen.getByText(zh['action.open']))
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '五年 Go' } })
     fireEvent.click(screen.getByText(zh['action.start']))
 
-    // The share must be obtained inside the click; the session is created only afterwards.
-    await waitFor(() => { expect(mocks.request).toHaveBeenCalled() })
-    expect(mocks.request).toHaveBeenCalledWith('五年 Go', 'session-a', expect.anything())
-    expect(startSession).toHaveBeenCalledTimes(1)
+    // The share must be obtained inside the click, before anything is awaited.
+    await waitFor(() => { expect(mocks.start).toHaveBeenCalled() })
+    expect(mocks.start).toHaveBeenCalledWith('五年 Go', 'session-a', expect.anything())
     expect(screen.queryByText(zh['dialog.title'])).toBeNull()
     expect(window.localStorage.getItem('dsh.live-assist.background')).toBe('五年 Go')
   })
 
-  it('listens in the blank session it is already in, creating no other', async () => {
-    const startSession = vi.fn()
-    const { mocks } = renderButton({ sessionId: 'session-a' as SessionId, startSession, blank: true })
-    fireEvent.click(screen.getByText(zh['action.open']))
-    fireEvent.click(screen.getByText(zh['action.start']))
-
-    // New Session would hand back this same blank session, so no switch is requested and the
-    // request is adopted here — waiting for a different session would wait forever.
-    await waitFor(() => { expect(mocks.request).toHaveBeenCalled() })
-    expect(mocks.request).toHaveBeenCalledWith('', undefined, expect.anything())
-    expect(mocks.adopt).toHaveBeenCalledWith('session-a')
-    expect(startSession).not.toHaveBeenCalled()
-  })
-
-  it('reports a refused share and creates no session', async () => {
+  it('reports a refused share and starts nothing', async () => {
     shareProbe.failWith = new Error('用户取消了共享')
-    const startSession = vi.fn()
-    const { mocks } = renderButton({ startSession })
+    const { mocks } = renderButton()
     fireEvent.click(screen.getByText(zh['action.open']))
     fireEvent.click(screen.getByText(zh['action.start']))
     await waitFor(() => { expect(screen.getByText(/用户取消了共享/)).toBeTruthy() })
-    expect(mocks.request).not.toHaveBeenCalled()
-    expect(startSession).not.toHaveBeenCalled()
+    expect(mocks.start).not.toHaveBeenCalled()
     // The dialog stays open so the user can simply try again.
     expect(screen.getByText(zh['dialog.title'])).toBeTruthy()
   })
@@ -203,7 +189,7 @@ describe('LiveAssistButton while listening', () => {
   it('re-renders when the controller reports the counterpart speaking', () => {
     const { controller, set } = stub({ running: true, connected: true })
     const props = {
-      t, sessionId: 'session-b' as SessionId, controller, startSession: vi.fn(), isBlankSession: () => false,
+      t, sessionId: 'session-b' as SessionId, controller, isBlankSession: () => false,
     } as unknown as ComponentProps<typeof LiveAssistButton>
     render(<LiveAssistButton {...props} />)
     expect(screen.getByText(zh['state.listening'])).toBeTruthy()
@@ -212,20 +198,16 @@ describe('LiveAssistButton while listening', () => {
   })
 })
 
-describe('LiveAssistButton session handoff', () => {
-  it('adopts a pending start when it mounts in the new session', () => {
-    const { controller, mocks } = stub({ running: true })
-    Object.defineProperty(controller, 'awaiting', { value: true })
+describe('LiveAssistButton across a session switch', () => {
+  it('keeps rendering the running bar after remounting in another session', () => {
+    const { controller, mocks } = stub({ running: true, connected: true })
     const props = {
-      t, sessionId: 'session-b' as SessionId, controller, startSession: vi.fn(), isBlankSession: () => false,
+      t, sessionId: 'session-b' as SessionId, controller, isBlankSession: () => false,
     } as unknown as ComponentProps<typeof LiveAssistButton>
     render(<LiveAssistButton {...props} />)
-    expect(mocks.adopt).toHaveBeenCalledWith('session-b')
-  })
-
-  it('does not adopt when nothing is pending', () => {
-    const { mocks } = renderButton({ state: { running: false } })
-    expect(mocks.adopt).not.toHaveBeenCalled()
+    // The run lives in the controller, so a remount neither restarts nor drops it.
+    expect(screen.getByText(zh['state.listening'])).toBeTruthy()
+    expect(mocks.start).not.toHaveBeenCalled()
   })
 })
 
@@ -295,11 +277,10 @@ describe('LiveAssistButton storage and dismissal', () => {
     const setItem = vi.spyOn(window.localStorage.__proto__ as Storage, 'setItem')
       .mockImplementation(() => { throw new Error('storage full') })
     try {
-      const startSession = vi.fn()
-      renderButton({ startSession })
+      const { mocks } = renderButton()
       fireEvent.click(screen.getByText(zh['action.open']))
       fireEvent.click(screen.getByText(zh['action.start']))
-      await waitFor(() => { expect(startSession).toHaveBeenCalled() })
+      await waitFor(() => { expect(mocks.start).toHaveBeenCalled() })
     } finally {
       setItem.mockRestore()
     }
@@ -312,11 +293,10 @@ describe('LiveAssistButton storage and dismissal', () => {
   })
 
   it('closes the dialog without starting', () => {
-    const startSession = vi.fn()
-    renderButton({ startSession })
+    const { mocks } = renderButton()
     fireEvent.click(screen.getByText(zh['action.open']))
     fireEvent.click(screen.getByLabelText(zh['action.close']))
     expect(screen.queryByText(zh['dialog.title'])).toBeNull()
-    expect(startSession).not.toHaveBeenCalled()
+    expect(mocks.start).not.toHaveBeenCalled()
   })
 })

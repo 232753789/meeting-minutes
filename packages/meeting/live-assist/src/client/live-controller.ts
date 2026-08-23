@@ -34,23 +34,17 @@ function errorMessage(error: unknown): string {
 /**
  * Owns one running recognizer across session switches.
  *
- * Starting one from a session that already holds a conversation creates a new dsh session, which
- * remounts every session-scoped slot component — so the capture, the socket, and the run state
- * live here instead of in the component. A start is therefore a two-step handoff: the composer of
- * the old session records the request, and the component that mounts in the newly created session
- * adopts it with that session's id. Starting from a blank session skips the switch and adopts
- * that session directly.
+ * Listening runs in the session the user started it from, so the interview joins whatever
+ * conversation is open rather than opening one of its own. The user is free to switch sessions
+ * while it runs, which remounts every session-scoped slot component — so the capture, the socket,
+ * and the run state live here instead of in the component.
  */
 export class LiveAssistController {
   private readonly listeners = new Set<() => void>()
   private current: ControllerState = INITIAL_STATE
   private capture: CaptureHandle | null = null
   private socket: WebSocket | null = null
-  private pending: {
-    readonly background: string
-    readonly from: SessionId | undefined
-    readonly share: MediaStream
-  } | null = null
+  private share: MediaStream | null = null
 
   /**
    * Subscribe to state changes.
@@ -77,40 +71,20 @@ export class LiveAssistController {
   }
 
   /**
-   * Record a start request over an already-shared stream; the caller then supplies the session
-   * that will adopt it.
+   * Open the recognizer over an already-shared stream, against the session the user is in.
    *
    * The share must already be open: the browser grants it only while the user's click is the
-   * transient activation, which the session creation that follows would spend.
+   * transient activation, which anything awaited before this call would spend.
    * @param background - the interviewee's own material.
-   * @param from - the session that must not adopt this request, because the caller is switching
-   * away from it; `undefined` when the caller is listening in place and the very next `adopt`
-   * is the intended one.
+   * @param session - the session that will carry the transcript and answers.
    * @param share - the stream from `requestSystemAudioShare`.
    */
-  request(background: string, from: SessionId | undefined, share: MediaStream): void {
-    this.pending = { background, from, share }
+  start(background: string, session: SessionId, share: MediaStream): void {
+    if (this.current.running) return
+    this.share = share
     const { failure: _cleared, ...rest } = this.current
     this.set({ ...rest, running: true, connected: false, paused: false })
-  }
-
-  /** Whether a start request is waiting for its session. */
-  get awaiting(): boolean {
-    return this.pending !== null
-  }
-
-  /**
-   * Adopt a waiting start request into `session`, unless this is the session it came from.
-   *
-   * A request recorded with no `from` is adopted by whichever session offers itself first, which
-   * is how listening in a blank session works: no switch happens, so no other mount ever would.
-   * @param session - the session that will carry the transcript and answers.
-   */
-  adopt(session: SessionId): void {
-    const pending = this.pending
-    if (pending === null || pending.from === session) return
-    this.pending = null
-    void this.run(pending.background, session, pending.share)
+    void this.run(background, session, share)
   }
 
   private async run(background: string, session: SessionId, share: MediaStream): Promise<void> {
@@ -165,10 +139,10 @@ export class LiveAssistController {
 
   /** Stop the recognizer and release the share. */
   stop = (): void => {
-    const pending = this.pending
-    this.pending = null
-    // A request that never found its session still holds an open share.
-    if (pending !== null) for (const track of pending.share.getTracks()) track.stop()
+    // A start whose socket never opened still holds the share the picker granted.
+    const share = this.share
+    this.share = null
+    if (share !== null) for (const track of share.getTracks()) track.stop()
     this.release()
     this.set({ ...INITIAL_STATE, ...(this.current.failure === undefined ? {} : { failure: this.current.failure }) })
   }

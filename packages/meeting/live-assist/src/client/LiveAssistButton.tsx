@@ -1,6 +1,6 @@
 /** Composer control: a setup dialog before listening, a compact status bar while it runs. */
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MissingSystemAudioError, requestSystemAudioShare } from './audio-capture.ts'
@@ -44,24 +44,17 @@ export function statusKey(state: ControllerState): LiveAssistKey {
 
 /** Composer control whose setup lives in a dialog and whose running state is one inline row. */
 export function LiveAssistButton(
-  { t, sessionId, controller, startSession, isBlankSession }: LiveAssistButtonProps & LiveAssistControllerInjected,
+  { t, sessionId, controller, isBlankSession }: LiveAssistButtonProps & LiveAssistControllerInjected,
 ) {
   const [open, setOpen] = useState(false)
   const [background, setBackground] = useState(readBackground)
   const state = useSyncExternalStore(controller.subscribe, controller.getState)
 
-  // A start made from a session that holds a conversation is recorded there and adopted by the
-  // component that mounts in the newly created session, because only that mount knows the session
-  // the events belong to. A start made in place has already been adopted by the time this runs.
-  useEffect(() => {
-    if (controller.awaiting) controller.adopt(sessionId)
-  }, [controller, sessionId, state.running])
-
   const [failure, setFailure] = useState<{ key: 'share' | 'missingAudio'; message: string } | null>(null)
 
-  // The share picker opens only while this click is still the transient activation, so it is
-  // requested here — before creating the session, which would spend that activation and leave
-  // the picker silently unopened on every start after the first.
+  // The share picker opens only while this click is still the transient activation, so nothing
+  // is awaited before it: anything else first would spend that activation and leave the picker
+  // silently unopened.
   const start = useCallback(async () => {
     setFailure(null)
     let share: MediaStream
@@ -74,14 +67,10 @@ export function LiveAssistButton(
     }
     writeBackground(background)
     setOpen(false)
-    // A blank session is the one New Session would land in, so `startSession` would hand back
-    // this very id and no remount would follow. Listening in place is both what the user asked
-    // for and the only start that can complete from here.
-    const inPlace = isBlankSession(sessionId)
-    controller.request(background, inPlace ? undefined : sessionId, share)
-    if (inPlace) controller.adopt(sessionId)
-    else startSession()
-  }, [background, controller, isBlankSession, sessionId, startSession])
+    // The interview joins the conversation the user is already in; the composer is session-scoped,
+    // so there is always one.
+    controller.start(background, sessionId, share)
+  }, [background, controller, sessionId])
 
   const shown = failure ?? state.failure
   const failureMessage = shown === undefined
@@ -116,6 +105,7 @@ export function LiveAssistButton(
           onClose={() => { setOpen(false) }}
         >
           <p className={css.description}>{t('dialog.description')}</p>
+          {isBlankSession(sessionId) ? <p className={css.notice}>{t('hint.blankSession')}</p> : null}
           {failureMessage === null ? null : <p className={css.error}>{failureMessage}</p>}
           {state.error === undefined ? null : <p className={css.error}>{t('error.server', { message: state.error })}</p>}
           <label className={css.field}>

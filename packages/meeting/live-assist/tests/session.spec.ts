@@ -551,8 +551,6 @@ describe('LiveSession naming raced against disposal', () => {
           await gate
           // How a real route reports the deadline the session's own abort tripped.
           throw new Error('aborted')
-          // eslint-disable-next-line no-unreachable -- the generator needs a yield to be one
-          yield { type: 'finish', reason: { kind: 'stop' } }
         })(),
       },
     }

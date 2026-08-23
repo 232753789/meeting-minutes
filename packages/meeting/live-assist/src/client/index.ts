@@ -21,8 +21,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 const NS = 'live-assist'
 
-/** Required slot, locale, projection, session, and workspace services. */
-export const inject = ['slots', 'locale', 'conversationEvents', 'sessions', 'workspaces']
+/** Required slot, locale, projection, and session services. */
+export const inject = ['slots', 'locale', 'conversationEvents', 'sessions']
 
 /**
  * Register the composer control, the exchange projection, and its chat renderer.
@@ -51,7 +51,6 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (): LiveAssistControllerInjected => ({
       controller,
-      startSession: () => { ctx.workspaces.startSession() },
       isBlankSession: session => ctx.sessions.list.getSnapshot().byId[session]?.blank === true,
     }),
   }, LiveAssistButton))

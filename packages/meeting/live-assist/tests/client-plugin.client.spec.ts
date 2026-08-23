@@ -13,7 +13,6 @@ function harness() {
   })
   const registerLocale = vi.fn(() => vi.fn())
   const registerDefinition = vi.fn()
-  const startSession = vi.fn()
   const list = { byId: { 'session-blank': { blank: true }, 'session-used': { blank: false } } }
   const ctx = {
     effect: vi.fn((run: () => unknown) => run()),
@@ -21,14 +20,13 @@ function harness() {
     slots: { inject: vi.fn((_name: string, run: () => void) => { run() }), register },
     conversationEvents: { register: registerDefinition },
     sessions: { list: { getSnapshot: () => list } },
-    workspaces: { startSession },
   } as unknown as ClientContext
-  return { ctx, registrations, registerLocale, registerDefinition, register, startSession }
+  return { ctx, registrations, registerLocale, registerDefinition, register }
 }
 
 describe('live-assist client plugin', () => {
   it('declares every service it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'conversationEvents', 'sessions', 'workspaces'])
+    expect(inject).toEqual(['slots', 'locale', 'conversationEvents', 'sessions'])
   })
 
   it('registers dictionaries, the projection, the renderer, and the composer control', () => {
@@ -51,24 +49,21 @@ describe('live-assist client plugin', () => {
     ])
   })
 
-  it('injects a controller, a session starter, and the blank-session test', () => {
-    const { ctx, register, startSession } = harness()
+  it('injects the controller and the blank-session test into the composer control', () => {
+    const { ctx, register } = harness()
     apply(ctx)
     const composer = register.mock.calls
       .map(call => call[0] as { name: string; inject?: () => unknown })
       .find(spec => spec.name === 'conversation.input.left')
     const injected = composer?.inject?.() as {
       controller: unknown
-      startSession: () => void
       isBlankSession: (session: string) => boolean
     }
     expect(injected.controller).toBeDefined()
-    injected.startSession()
-    expect(startSession).toHaveBeenCalledTimes(1)
     expect(injected.isBlankSession('session-blank')).toBe(true)
     expect(injected.isBlankSession('session-used')).toBe(false)
-    // A session the list has not caught up with is not treated as blank: a start would then be
-    // adopted here and the transcript would land in the user's own conversation.
+    // A session the list has not caught up with is not warned about; the warning is for the
+    // case the list can actually confirm.
     expect(injected.isBlankSession('session-unknown')).toBe(false)
   })
 

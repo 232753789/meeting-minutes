@@ -5,17 +5,15 @@ import type { LiveAssistController } from './live-controller.ts'
 
 /** Injected share for the composer control. */
 export interface LiveAssistControllerInjected {
-  /** The run lifecycle shared across session switches. */
+  /** The run lifecycle, owned outside React so it survives a session switch. */
   readonly controller: LiveAssistController
-  /** Create a new dsh session and make it current; the new mount adopts the pending start. */
-  readonly startSession: () => void
   /**
-   * Whether a session has an empty log, and is therefore the session a New Session flow would
-   * land in anyway.
+   * Whether a session's log is still empty.
    *
-   * Starting from one must listen in place: `startSession` reuses the workspace's blank session,
-   * so requesting a switch out of the blank session the user is already in returns that same id,
-   * no remount follows, and a start that waits for a different session would wait forever.
+   * Nothing this plugin appends opens a turn, so an interview recorded in a blank session leaves
+   * it blank: the list shows it only while it is selected, and the next New Session reuses it.
+   * The setup dialog warns before that happens rather than silently producing a session the user
+   * cannot find afterwards.
    * @param session - the session the control is mounted in.
    * @returns true when that session's log is still empty.
    */

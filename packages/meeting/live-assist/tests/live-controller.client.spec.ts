@@ -84,11 +84,10 @@ beforeEach(() => {
 
 afterEach(() => { vi.unstubAllGlobals() })
 
-/** Take a controller from idle to a live recognizer in the adopted session. */
+/** Take a controller from idle to a live recognizer in the session it started from. */
 async function running(): Promise<{ controller: LiveAssistController; socket: FakeSocket }> {
   const controller = new LiveAssistController()
-  controller.request('我的简历', FROM, share())
-  controller.adopt(TARGET)
+  controller.start('我的简历', TARGET, share())
   const socket = await vi.waitFor(() => {
     const current = FakeSocket.last
     expect(current).toBeDefined()
@@ -112,58 +111,35 @@ describe('LiveAssistController', () => {
   it('starts idle', () => {
     const controller = new LiveAssistController()
     expect(controller.getState()).toMatchObject({ running: false, connected: false, paused: false })
-    expect(controller.awaiting).toBe(false)
   })
 
-  it('marks itself running while it awaits the new session', () => {
+  it('marks itself running as soon as the socket is opening', () => {
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    expect(controller.awaiting).toBe(true)
+    controller.start('bg', FROM, share())
     expect(controller.getState().running).toBe(true)
-    expect(FakeSocket.last).toBeUndefined()
   })
 
-  it('refuses to adopt into the session the request came from', () => {
-    const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(FROM)
-    expect(controller.awaiting).toBe(true)
-    expect(FakeSocket.last).toBeUndefined()
-  })
-
-  it('adopts in place when the request named no session to switch away from', async () => {
-    const controller = new LiveAssistController()
-    controller.request('bg', undefined, share())
-    controller.adopt(FROM)
-    const socket = await vi.waitFor(() => {
-      const current = FakeSocket.last
-      expect(current).toBeDefined()
-      return current as FakeSocket
-    })
-    socket.open()
-    await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
-    expect(JSON.parse(socket.sent[0] as string))
-      .toEqual({ type: 'start', background: 'bg', session: FROM })
-  })
-
-  it('adopts into a new session and names it in the start message', async () => {
+  it('names the session it was started from in the start message', async () => {
     const { socket } = await running()
     expect(JSON.parse(socket.sent[0] as string))
       .toEqual({ type: 'start', background: '我的简历', session: TARGET })
   })
 
-  it('adopts only once', async () => {
+  it('ignores a second start while one is running', async () => {
     const { controller } = await running()
-    expect(controller.awaiting).toBe(false)
-    controller.adopt('session-c' as SessionId)
-    expect(FakeSocket.last?.url).toBeDefined()
+    const first = FakeSocket.last
+    const second = share()
+    controller.start('另一份简历', 'session-c' as SessionId, second)
+    expect(FakeSocket.last).toBe(first)
+    // The refused start's share is the caller's to release; nothing here silently keeps it.
+    expect(second.getTracks()).toHaveLength(1)
   })
 
   it('notifies subscribers on every transition', async () => {
     const controller = new LiveAssistController()
     const listener = vi.fn()
     const unsubscribe = controller.subscribe(listener)
-    controller.request('bg', FROM, share())
+    controller.start('bg', FROM, share())
     expect(listener).toHaveBeenCalled()
     unsubscribe()
     const before = listener.mock.calls.length
@@ -233,20 +209,10 @@ describe('LiveAssistController', () => {
     expect(controller.getState().running).toBe(false)
   })
 
-  it('discards a pending request on stop', () => {
-    const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.stop()
-    expect(controller.awaiting).toBe(false)
-    controller.adopt(TARGET)
-    expect(FakeSocket.last).toBeUndefined()
-  })
-
   it('reports a refused share', async () => {
     capture.failWith = new Error('用户取消了共享')
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     const socket = await vi.waitFor(() => FakeSocket.last as FakeSocket)
     socket.open()
     await vi.waitFor(() => {
@@ -256,8 +222,7 @@ describe('LiveAssistController', () => {
 
   it('reports a socket that never opened', async () => {
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     const socket = await vi.waitFor(() => FakeSocket.last as FakeSocket)
     socket.fire('error')
     await vi.waitFor(() => {
@@ -268,16 +233,14 @@ describe('LiveAssistController', () => {
   it('reports a socket that could not be constructed', () => {
     FakeSocket.failConstruction = true
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     expect(controller.getState().failure).toEqual({ key: 'socket', message: 'socket refused' })
   })
 
   it('keeps the failure visible after a stop', async () => {
     FakeSocket.failConstruction = true
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     controller.stop()
     expect(controller.getState().failure).toBeDefined()
   })
@@ -290,8 +253,7 @@ describe('LiveAssistController edge paths', () => {
       throw '底层拒绝'
     })
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     expect(controller.getState().failure).toEqual({ key: 'socket', message: '底层拒绝' })
   })
 
@@ -313,18 +275,18 @@ describe('LiveAssistController edge paths', () => {
 })
 
 describe('LiveAssistController share ownership', () => {
-  it('releases a share whose request never found a session', () => {
+  it('releases a share stopped before its socket opened', () => {
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
+    controller.start('bg', FROM, share())
     controller.stop()
+    expect(controller.getState().running).toBe(false)
     expect(shareStop).toHaveBeenCalledTimes(1)
   })
 
   it('releases the share when the graph cannot be built', async () => {
     capture.failWith = new Error('worklet blocked')
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     const socket = await vi.waitFor(() => FakeSocket.last as FakeSocket)
     socket.open()
     await vi.waitFor(() => { expect(controller.getState().failure).toMatchObject({ key: 'share' }) })
@@ -334,8 +296,7 @@ describe('LiveAssistController share ownership', () => {
   it('releases the share when the socket cannot be constructed', () => {
     FakeSocket.failConstruction = true
     const controller = new LiveAssistController()
-    controller.request('bg', FROM, share())
-    controller.adopt(TARGET)
+    controller.start('bg', TARGET, share())
     expect(shareStop).toHaveBeenCalled()
   })
 })
