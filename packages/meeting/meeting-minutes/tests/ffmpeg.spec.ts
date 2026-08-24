@@ -80,6 +80,40 @@ describe('meeting audio preparation', () => {
     expect(result.chunks).toHaveLength(1)
   })
 
+  it('reuses a playback file a previous attempt already produced', async () => {
+    const { config, record } = await meeting('original.webm')
+    await writeFile(join(meetingDirectory(config, ID), 'audio.mp4'), 'transcoded')
+    record.normalizedAudio = 'audio.mp4'
+    const runs: string[][] = []
+    const result = await normalizeAndChunk(fakeSubprocess(runs), config, record, AbortSignal.timeout(5_000))
+
+    expect(result.audioFilename).toBe('audio.mp4')
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toEqual(expect.arrayContaining(['-i', 'audio.mp4', '-f', 'segment']))
+  })
+
+  it('transcodes again when the recorded playback file is gone', async () => {
+    const { config, record } = await meeting('original.webm')
+    record.normalizedAudio = 'audio.mp4'
+    const runs: string[][] = []
+    const result = await normalizeAndChunk(fakeSubprocess(runs), config, record, AbortSignal.timeout(5_000))
+
+    expect(result.audioFilename).toBe('audio.mp4')
+    expect(runs).toHaveLength(2)
+    expect(runs[0]).toEqual(expect.arrayContaining(['-i', 'original.webm', 'audio.mp4']))
+  })
+
+  it('surfaces a playback file that cannot be inspected instead of transcoding over it', async () => {
+    const { config, record } = await meeting('original.webm')
+    record.normalizedAudio = 'original.webm/audio.mp4'
+    await expect(normalizeAndChunk(
+      fakeSubprocess([]),
+      config,
+      record,
+      AbortSignal.timeout(5_000),
+    )).rejects.toThrow('ENOTDIR')
+  })
+
   it('reports FFmpeg diagnostics and removes the chunk directory on failure', async () => {
     const { config, record } = await meeting('original.mp4')
     const runs: string[][] = []

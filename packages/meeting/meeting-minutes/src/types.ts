@@ -15,6 +15,15 @@ export function MeetingId(value: string): MeetingId {
 /** Durable processing stage exposed to the browser. */
 export type MeetingStage = 'queued' | 'normalizing' | 'transcribing' | 'summarizing' | 'complete' | 'failed'
 
+/**
+ * How much of a previous attempt another processing attempt keeps.
+ *
+ * `resume` restarts at the stage the previous attempt failed in, reusing the transcoded MP4, every
+ * completed ASR chunk, and every completed summary request. `restart` discards all of them and
+ * reruns the complete chain from the preserved original recording.
+ */
+export type MeetingRetryMode = 'resume' | 'restart'
+
 /** One coarse, non-speaker-attributed ASR segment. */
 export interface TranscriptSegment {
   /** Zero-based source chunk. */
@@ -55,6 +64,8 @@ export interface MeetingStatus {
   readonly summaryMarkdown?: string
   readonly minutesFilename?: string
   readonly error?: string
+  /** Stage a `resume` retry would start at; absent when nothing of this meeting can be reused. */
+  readonly resumeFrom?: MeetingStage
 }
 
 /** Processing acknowledgement returned after an upload or retry is durably admitted. */
@@ -68,6 +79,14 @@ export interface MeetingDeleted {
   readonly id: MeetingId
 }
 
+/** Completed ASR chunks of an unfinished transcription, persisted for the next attempt. */
+export interface TranscriptProgress {
+  /** Chunk duration the segments were produced with; a changed value invalidates them. */
+  readonly chunkSeconds: number
+  /** Completed segments, indexed from zero without gaps. */
+  readonly segments: readonly TranscriptSegment[]
+}
+
 /** Exact auxiliary LLM request persisted before dispatch. */
 export interface SummaryRequestRecord {
   readonly index: number
@@ -78,6 +97,16 @@ export interface SummaryRequestRecord {
   readonly input: string
   readonly maxTokens: number
   output?: string
+}
+
+/**
+ * A persisted summary request whose output was recorded.
+ *
+ * The audit is written in dispatch order and an output is stored as soon as one arrives, so the
+ * requests carrying an output form the leading run a later attempt can replay.
+ */
+export interface CompletedSummaryRequest extends SummaryRequestRecord {
+  readonly output: string
 }
 
 /** Private metadata stored inside one meeting directory. */

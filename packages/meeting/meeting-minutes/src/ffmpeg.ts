@@ -1,6 +1,6 @@
 /** FFmpeg-backed normalization and coarse WAV chunk production. */
 
-import { mkdir, readdir, rm } from 'node:fs/promises'
+import { mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import ffmpegPath from 'ffmpeg-static'
@@ -64,9 +64,28 @@ function isMp4Recording(record: MeetingRecord): boolean {
 }
 
 /**
+ * Whether a previous attempt already produced this meeting's playback file.
+ *
+ * `normalizedAudio` is published only after transcoding returned, so the recorded filename names a
+ * complete file; a full reprocess clears the field before this runs.
+ */
+async function transcodedAlready(config: ResolvedConfig, record: MeetingRecord): Promise<boolean> {
+  if (record.normalizedAudio === undefined) return false
+  try {
+    await stat(join(meetingDirectory(config, record.id), record.normalizedAudio))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
+/**
  * Provide the MP4 playback file and split 16 kHz mono WAV files for ASR.
  *
  * An MP4 upload is kept as the playback file; only another container is transcoded to MP4/AAC.
+ * A playback file a previous attempt already produced is reused, so a retry pays only for the WAV
+ * chunks, which are temporary and always cut again.
  * @param ctx - Cordis context carrying the subprocess provider.
  * @param config - resolved FFmpeg and chunk-duration settings.
  * @param record - persisted upload metadata selecting the source file.
@@ -81,8 +100,8 @@ export async function normalizeAndChunk(
 ): Promise<{ audioFilename: string; chunkDirectory: string; chunks: string[] }> {
   const directory = meetingDirectory(config, record.id)
   const executable = await resolveFfmpegExecutable(ctx, config)
-  const transcode = !isMp4Recording(record)
-  const audioFilename = transcode ? NORMALIZED_AUDIO_FILENAME : record.originalFilename
+  const transcode = !isMp4Recording(record) && !await transcodedAlready(config, record)
+  const audioFilename = isMp4Recording(record) ? record.originalFilename : NORMALIZED_AUDIO_FILENAME
   if (transcode) {
     await runFfmpeg(ctx, executable, directory, [
       '-hide_banner',

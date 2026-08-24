@@ -25,7 +25,7 @@ const NS = 'live-assist'
 export const inject = ['slots', 'locale', 'conversationEvents', 'sessions']
 
 /**
- * Register the composer control, the exchange projection, and its chat renderer.
+ * Register the composer tool, the exchange projection, and its chat renderer.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
@@ -44,8 +44,8 @@ export function apply(ctx: ClientContext): void {
     key: EXCHANGE_KIND,
     locale: NS,
   }, ExchangeCard))
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
+  ctx.slots.inject('conversation.input.tool', () => ctx.slots.register({
+    name: 'conversation.input.tool',
     id: 'live-assist',
     order: 110,
     locale: NS,

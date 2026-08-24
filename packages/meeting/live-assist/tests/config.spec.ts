@@ -64,7 +64,7 @@ describe('resolveConfig', () => {
       vadSpeechPadMs: 200,
       minUtteranceMs: 400,
       maxUtteranceMs: 20_000,
-      answerMaxOutputTokens: 800,
+      answerMaxOutputTokens: 1600,
       answerRequestTimeoutMs: 120_000,
       maxBackgroundBytes: 32_768,
       historyTurns: 8,
@@ -98,8 +98,35 @@ describe('resolveConfig', () => {
     ['maxUtteranceMs below minUtteranceMs', { minUtteranceMs: 5_000, maxUtteranceMs: 1_000 }, /maxUtteranceMs must exceed/],
     ['a blank answerProvider', { answerProvider: ' ', answerModel: 'm' }, /answerProvider must be a non-empty/],
     ['a blank answerModel', { answerProvider: 'p', answerModel: ' ' }, /answerModel must be a non-empty/],
+    ['deepProvider without deepModel', { deepProvider: 'deepseek' }, /deepProvider and deepModel must be configured together/],
+    ['deepModel without deepProvider', { deepModel: 'deepseek-reasoner' }, /deepProvider and deepModel must be configured together/],
+    ['a blank deepProvider', { deepProvider: ' ', deepModel: 'm' }, /deepProvider must be a non-empty/],
+    ['a blank deepModel', { deepProvider: 'p', deepModel: ' ' }, /deepModel must be a non-empty/],
+    ['a blank deepReasoningEffort', { deepProvider: 'p', deepModel: 'm', deepReasoningEffort: ' ' }, /deepReasoningEffort must be a non-empty/],
+    ['deepReasoningEffort without a deep route', { deepReasoningEffort: 'high' }, /deepReasoningEffort requires deepProvider and deepModel/],
+    ['a fractional deepMaxOutputTokens', { deepMaxOutputTokens: 1.5 }, /deepMaxOutputTokens must be a positive integer/],
+    ['a zero deepRequestTimeoutMs', { deepRequestTimeoutMs: 0 }, /deepRequestTimeoutMs must be a positive integer/],
   ])('rejects %s', (_label, overrides, expected) => {
     expect(() => resolve(overrides as ConfigInput)).toThrow(expected)
+  })
+
+  it('leaves the deep track off unless both halves are configured', () => {
+    expect(resolve()).not.toHaveProperty('deep')
+    expect(resolve({ deepProvider: 'deepseek', deepModel: 'deepseek-reasoner' }).deep)
+      .toMatchObject({
+        provider: 'deepseek',
+        model: 'deepseek-reasoner',
+        maxOutputTokens: 4096,
+        requestTimeoutMs: 300_000,
+      })
+  })
+
+  it('freezes the deep route and omits an unnamed reasoning effort', () => {
+    const deep = resolve({ deepProvider: 'p', deepModel: 'm' }).deep
+    expect(Object.isFrozen(deep)).toBe(true)
+    expect(deep).not.toHaveProperty('reasoningEffort')
+    expect(resolve({ deepProvider: 'p', deepModel: 'm', deepReasoningEffort: 'high' }).deep)
+      .toMatchObject({ reasoningEffort: 'high' })
   })
 
   it('accepts a zero vadSpeechPadMs and a zero historyTurns', () => {

@@ -24,6 +24,7 @@ import {
   type MeetingDeleted,
   type MeetingList,
   type MeetingRecord,
+  type MeetingRetryMode,
 } from './types.ts'
 
 /** Route prefix owned by the meeting-minutes Host plugin. */
@@ -69,6 +70,19 @@ function sourceFilename(req: IncomingMessage): string | undefined {
     throw new HttpError(400, 'invalid x-meeting-source-filename header')
   }
   return sanitizeSourceFilename(decoded)
+}
+
+/**
+ * Resolve how much of a previous attempt the requested retry keeps.
+ *
+ * Omitting the parameter resumes, because a failed meeting is normally retried to get past what
+ * failed, not to pay for the stages that already succeeded.
+ */
+function retryMode(url: URL): MeetingRetryMode {
+  const value = url.searchParams.get('mode')
+  if (value === null || value === 'resume') return 'resume'
+  if (value === 'restart') return 'restart'
+  throw new HttpError(400, 'mode must be resume or restart')
 }
 
 function newMeetingId(startedAt: string): MeetingId {
@@ -150,7 +164,8 @@ export class MeetingHttpController {
   private async dispatch(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       if (!isLoopbackSameOriginRequest(req)) throw new HttpError(403, 'loopback same-origin access required')
-      const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      const pathname = url.pathname
       if (pathname === MEETINGS_PATH) {
         if (req.method === 'GET') {
           const meetings: MeetingList = { meetings: await this.runtime.list() }
@@ -184,7 +199,7 @@ export class MeetingHttpController {
       }
       if (resource === 'retry') {
         if (req.method !== 'POST') throw new HttpError(405, 'method not allowed')
-        const result = await this.runtime.retry(id)
+        const result = await this.runtime.retry(id, retryMode(url))
         if (result.kind === 'missing') throw new HttpError(404, 'meeting not found')
         if (result.kind === 'conflict') throw new HttpError(409, 'only an inactive complete or failed meeting can be reprocessed')
         const accepted: MeetingAccepted = { id, statusUrl: `${MEETINGS_PATH}/${id}` }

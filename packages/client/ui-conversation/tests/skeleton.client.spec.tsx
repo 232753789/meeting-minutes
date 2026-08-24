@@ -25,7 +25,7 @@ import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
-  ComposerBarOwnerProps,
+  ComposerBarOwnerProps, ComposerToolSeat,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
@@ -99,6 +99,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Composer tool ledger: entry ids the drawer renders one occurrence each of. */
+    toolIds?: readonly string[]
   } = {},
 ) {
   const root = sid('root')
@@ -135,11 +137,34 @@ function mount(
     subscribe: () => () => {},
     version: () => 1,
   }
+  const toolIds = options.toolIds ?? []
+  const tools = {
+    list: () => toolIds,
+    subscribe: () => () => {},
+    version: () => 1,
+  }
+  /** Owner share each tool occurrence received, in render order. */
+  const toolSeats: { id: string; owner: ComposerToolSeat }[] = []
   /** Owner share handed to the two composer tool-row seats, per render. */
   const seatOwners: { key: string; owner: unknown }[] = []
   let pickerOwner: unknown
   const renderSlot = ((key: string, owner: object, opts?: { only?: string }) => {
     slotCalls.push(key)
+    if (key === 'conversation.input.tool') {
+      const seat = owner as ComposerToolSeat
+      const id = opts?.only ?? ''
+      toolSeats.push({ id, owner: seat })
+      return (
+        <button
+          type="button"
+          data-testid={`tool-${id}-${seat.surface}`}
+          data-open={seat.open}
+          onClick={() => { seat.setOpen(!seat.open) }}
+        >
+          {id}
+        </button>
+      )
+    }
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
     }
@@ -247,11 +272,12 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    tools,
     t,
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open,
+    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, toolSeats, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -494,5 +520,81 @@ describe('ConversationRoot resident composer', () => {
     }))
     expect(b.view.getByRole('alert').textContent).toContain('Message send failed (offline)')
     expect(b.view.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
+})
+
+describe('Composer tool drawer', () => {
+
+  it('costs no chrome while no tool is registered', () => {
+    const b = mount(conversationSnapshot())
+    expect(b.view.queryAllByRole('button', { name: '工具' })).toEqual([])
+    expect(b.slotCalls).not.toContain('conversation.input.tool')
+  })
+
+  it('seats every entry in the tool row and only names them once opened', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, {
+      toolIds: ['meeting-minutes', 'live-assist'],
+    })
+    // Closed: the row carries the icons alone — the drawer face is what
+    // carries the name and the sentence about it.
+    expect(b.view.getByTestId('tool-meeting-minutes-bar')).toBeTruthy()
+    expect(b.view.getByTestId('tool-live-assist-bar')).toBeTruthy()
+    expect(b.view.queryByTestId('tool-live-assist-drawer')).toBeNull()
+
+    const toggle = b.view.getByRole('button', { name: '工具' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(b.view.getByTestId('tool-meeting-minutes-drawer')).toBeTruthy()
+    expect(b.view.getByTestId('tool-live-assist-drawer')).toBeTruthy()
+  })
+
+  it('opens the entry the drawer row picked, and closes the panel over it', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, {
+      toolIds: ['meeting-minutes', 'live-assist'],
+    })
+    fireEvent.click(b.view.getByRole('button', { name: '工具' }))
+    fireEvent.click(b.view.getByTestId('tool-live-assist-drawer'))
+
+    // The panel is gone (it would cover the surface the row just opened) and
+    // the bar occurrence — the one that outlives the drawer — holds the flag.
+    expect(b.view.queryByTestId('tool-live-assist-drawer')).toBeNull()
+    expect(b.view.getByTestId('tool-live-assist-bar').getAttribute('data-open')).toBe('true')
+    expect(b.view.getByTestId('tool-meeting-minutes-bar').getAttribute('data-open')).toBe('false')
+  })
+
+  it('keeps one tool open at a time and closes on the same seat', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, {
+      toolIds: ['meeting-minutes', 'live-assist'],
+    })
+    fireEvent.click(b.view.getByTestId('tool-meeting-minutes-bar'))
+    expect(b.view.getByTestId('tool-meeting-minutes-bar').getAttribute('data-open')).toBe('true')
+
+    fireEvent.click(b.view.getByTestId('tool-live-assist-bar'))
+    expect(b.view.getByTestId('tool-live-assist-bar').getAttribute('data-open')).toBe('true')
+    expect(b.view.getByTestId('tool-meeting-minutes-bar').getAttribute('data-open')).toBe('false')
+
+    fireEvent.click(b.view.getByTestId('tool-live-assist-bar'))
+    expect(b.view.getByTestId('tool-live-assist-bar').getAttribute('data-open')).toBe('false')
+  })
+
+  it('dismisses the panel on an outside pointer without touching the open tool', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, { toolIds: ['live-assist'] })
+    fireEvent.click(b.view.getByTestId('tool-live-assist-bar'))
+    fireEvent.click(b.view.getByRole('button', { name: '工具' }))
+    expect(b.view.getByTestId('tool-live-assist-drawer')).toBeTruthy()
+
+    fireEvent.pointerDown(document.body)
+    expect(b.view.queryByTestId('tool-live-assist-drawer')).toBeNull()
+    expect(b.view.getByTestId('tool-live-assist-bar').getAttribute('data-open')).toBe('true')
+  })
+
+  it('hands every occurrence the input-region currency alongside its own seat', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, { toolIds: ['live-assist'] })
+    const seat = b.toolSeats.at(-1)
+    expect(seat?.id).toBe('live-assist')
+    expect(seat?.owner.surface).toBe('bar')
+    expect(seat?.owner.session.sessionId).toBe(SID)
+    expect(seat?.owner.input.draft).toBe('ordinary draft')
   })
 })

@@ -3,6 +3,7 @@
 /** Simplified Chinese dictionary; its keys define {@link LiveAssistKey}. */
 export const zh = {
   'action.open': '面试助手',
+  'tool.description': '实时转写对方的发言，并在你开口前给出回答要点。',
   'action.close': '关闭',
   'action.start': '开始监听',
   'action.stop': '结束',
@@ -19,6 +20,9 @@ export const zh = {
   'state.listening': '聆听中',
   'state.speaking': '对方正在说话',
   'state.thinking': '正在组织回答…',
+  'state.thinkingDeep': '正在深入分析…',
+  'answer.fast': '要点',
+  'answer.deep': '详细',
   'exchange.heard': '听到 {seconds} 秒',
   'background.title': '背景资料',
   'background.empty': '本次开始监听时没有填写背景资料。',
@@ -36,6 +40,7 @@ export const zh = {
 /** English dictionary, on the same keys as {@link zh}. */
 export const en = {
   'action.open': 'Interview assist',
+  'tool.description': 'Transcribes what the other side says and drafts talking points before you answer.',
   'action.close': 'Close',
   'action.start': 'Start listening',
   'action.stop': 'Stop',
@@ -52,6 +57,9 @@ export const en = {
   'state.listening': 'Listening',
   'state.speaking': 'They are speaking',
   'state.thinking': 'Composing an answer…',
+  'state.thinkingDeep': 'Thinking it through…',
+  'answer.fast': 'Talking points',
+  'answer.deep': 'In depth',
   'exchange.heard': '{seconds}s heard',
   'background.title': 'Background material',
   'background.empty': 'This run was started without any background material.',

@@ -477,33 +477,37 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 #### `live-assist/answer-delta` — log-only
 
 ```ts persistence-catalog
-/** One streamed fragment of the answer to `id`, in emission order. */
-'live-assist/answer-delta': { id: UtteranceId; text: string }
+/** One streamed fragment of `track`'s answer to `id`, in emission order. */
+'live-assist/answer-delta': { id: UtteranceId; track: AnswerTrack; text: string }
 ```
 
-Source: [`packages/meeting/live-assist/src/events.ts:24`](../packages/meeting/live-assist/src/events.ts)
+Source: [`packages/meeting/live-assist/src/events.ts:28`](../packages/meeting/live-assist/src/events.ts)
 
 <a id="live-assistanswer-end--log-only"></a>
 
 #### `live-assist/answer-end` — log-only
 
 ```ts persistence-catalog
-/** Answer generation for `id` finished normally. */
-'live-assist/answer-end': { id: UtteranceId }
+/** Answer generation for `id` finished normally on `track`. */
+'live-assist/answer-end': { id: UtteranceId; track: AnswerTrack }
 ```
 
-Source: [`packages/meeting/live-assist/src/events.ts:26`](../packages/meeting/live-assist/src/events.ts)
+Source: [`packages/meeting/live-assist/src/events.ts:30`](../packages/meeting/live-assist/src/events.ts)
 
 <a id="live-assistanswer-start--log-only"></a>
 
 #### `live-assist/answer-start` — log-only
 
 ```ts persistence-catalog
-/** Answer generation began for `id`; the following deltas carry its text. */
-'live-assist/answer-start': { id: UtteranceId }
+/**
+ * Answer generation began for `id` on `track`; the following deltas on that track carry its
+ * text. The `deep` track opens on the fast track's own decision to answer, so a `deep` start
+ * never appears without the `fast` one before it.
+ */
+'live-assist/answer-start': { id: UtteranceId; track: AnswerTrack }
 ```
 
-Source: [`packages/meeting/live-assist/src/events.ts:22`](../packages/meeting/live-assist/src/events.ts)
+Source: [`packages/meeting/live-assist/src/events.ts:26`](../packages/meeting/live-assist/src/events.ts)
 
 <a id="live-assistskipped--log-only"></a>
 
@@ -514,7 +518,7 @@ Source: [`packages/meeting/live-assist/src/events.ts:22`](../packages/meeting/li
 'live-assist/skipped': { id: UtteranceId; reason: SkipReason }
 ```
 
-Source: [`packages/meeting/live-assist/src/events.ts:28`](../packages/meeting/live-assist/src/events.ts)
+Source: [`packages/meeting/live-assist/src/events.ts:32`](../packages/meeting/live-assist/src/events.ts)
 
 <a id="live-assiststarted--log-only"></a>
 

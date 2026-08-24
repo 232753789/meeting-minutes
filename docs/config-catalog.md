@@ -869,6 +869,16 @@ export interface Config {
   answerProvider?: string
   /** Explicit answer model; must be paired with answerProvider. */
   answerModel?: string
+  /** Route of the second, slower answer; omission leaves the deep track off entirely. */
+  deepProvider?: string
+  /** Deep-answer model; must be paired with deepProvider. */
+  deepModel?: string
+  /** Reasoning effort id the deep route's provider accepts; requires the deep route. */
+  deepReasoningEffort?: string
+  /** Output-token cap for each deep answer. */
+  deepMaxOutputTokens?: number
+  /** Deadline for each deep-answer request; deep routes are typically far slower than fast ones. */
+  deepRequestTimeoutMs?: number
   /** Output-token cap for each answer. */
   answerMaxOutputTokens?: number
   /** Output-token cap for the session title derived from the background material. */
@@ -888,7 +898,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/meeting/live-assist/src/config.ts:10`](../packages/meeting/live-assist/src/config.ts)
+Source: [`packages/meeting/live-assist/src/config.ts:11`](../packages/meeting/live-assist/src/config.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 

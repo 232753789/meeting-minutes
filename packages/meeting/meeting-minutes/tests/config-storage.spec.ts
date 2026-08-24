@@ -6,14 +6,23 @@ import { resolveConfig, validateLocalModel } from '../src/config.ts'
 import {
   durationMinutes,
   listMeetings,
+  meetingDirectory,
   meetingDisplayName,
   minutesBasename,
   originalFilename,
+  readCompletedTranscript,
+  readSummaryRequests,
+  readTranscriptProgress,
+  removeResumableProgress,
+  removeTranscriptProgress,
   renderMinutes,
+  resumeStage,
   sanitizeSourceFilename,
   sanitizeTopic,
   transcriptDownloadName,
   writeRecord,
+  writeTranscript,
+  writeTranscriptProgress,
 } from '../src/storage.ts'
 import { MeetingId, type MeetingRecord } from '../src/types.ts'
 
@@ -168,5 +177,171 @@ describe('meeting history', () => {
     expect(transcriptDownloadName({ ...base, minutesFilename: '2026-08-19_09-15_周会_5m.md' }))
       .toBe('2026-08-19_09-15_周会_5m.txt')
     expect(transcriptDownloadName(base)).toBe('transcript.txt')
+  })
+})
+
+describe('resumable transcription progress', () => {
+  const record = (extra: Partial<MeetingRecord> = {}): MeetingRecord => ({
+    formatVersion: 1,
+    id: MeetingId('meeting-20260819T091500-00000000000b'),
+    stage: 'failed',
+    createdAt: '2026-08-19T01:15:00.000Z',
+    startedAt: '2026-08-19T01:15:00.000Z',
+    endedAt: '2026-08-19T01:20:00.000Z',
+    updatedAt: '2026-08-19T01:21:00.000Z',
+    originalFilename: 'original.mp4',
+    originalMimeType: 'audio/mp4',
+    originalBytes: 6,
+    completedChunks: 0,
+    ...extra,
+  })
+
+  const prepared = async (prefix: string): Promise<{
+    config: ReturnType<typeof resolveConfig>
+    id: MeetingId
+    directory: string
+  }> => {
+    const root = await mkdtemp(join(tmpdir(), prefix))
+    const config = resolveConfig({ asrMode: 'remote', storageRoot: root })
+    const id = record().id
+    const directory = meetingDirectory(config, id)
+    await mkdir(directory, { recursive: true })
+    return { config, id, directory }
+  }
+
+  it('round-trips completed chunks and removes the file once the transcript is published', async () => {
+    const { config, id, directory } = await prepared('meeting-progress-')
+    const segments = [
+      { index: 0, startSeconds: 0, text: '第一段。' },
+      { index: 1, startSeconds: config.asrChunkSeconds, text: '第二段。' },
+    ]
+    await writeTranscriptProgress(config, id, segments)
+    await expect(readTranscriptProgress(config, id, 3)).resolves.toEqual(segments)
+
+    await removeTranscriptProgress(config, id)
+    await expect(readTranscriptProgress(config, id, 3)).resolves.toEqual([])
+    await expect(readFile(join(directory, 'transcript-progress.json'), 'utf8')).rejects.toThrow()
+    await expect(removeTranscriptProgress(config, id)).resolves.toBeUndefined()
+  })
+
+  it('discards progress that no longer aligns with the chunks this attempt transcribes', async () => {
+    const { config, id, directory } = await prepared('meeting-progress-stale-')
+    const file = join(directory, 'transcript-progress.json')
+    const valid = { index: 0, startSeconds: 0, text: '第一段。' }
+
+    await writeFile(file, 'not json at all')
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, JSON.stringify([valid]))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, JSON.stringify({ chunkSeconds: config.asrChunkSeconds + 1, segments: [valid] }))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    const aligned = (segments: unknown): string =>
+      JSON.stringify({ chunkSeconds: config.asrChunkSeconds, segments })
+    await writeFile(file, aligned('第一段。'))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, aligned([valid, valid]))
+    await expect(readTranscriptProgress(config, id, 1)).resolves.toEqual([])
+
+    await writeFile(file, aligned(['第一段。']))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, aligned([{ ...valid, index: 3 }]))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, aligned([{ ...valid, startSeconds: 7 }]))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+
+    await writeFile(file, aligned([{ index: 0, startSeconds: 0, text: 42 }]))
+    await expect(readTranscriptProgress(config, id, 2)).resolves.toEqual([])
+  })
+
+  it('reads a published transcript back and refuses one that cannot be reused', async () => {
+    const { config, id, directory } = await prepared('meeting-completed-transcript-')
+    const segments = [{ index: 0, startSeconds: 0, text: '完整转写。' }]
+    const written = await writeTranscript(config, id, segments)
+    const complete = record({
+      normalizedAudio: 'audio.mp4',
+      transcriptJson: written.json,
+      transcriptText: written.text,
+    })
+
+    await expect(readCompletedTranscript(config, complete)).resolves.toEqual({
+      audioFilename: 'audio.mp4',
+      json: written.json,
+      text: written.text,
+      segments,
+    })
+    await expect(readCompletedTranscript(config, record({ transcriptJson: written.json }))).resolves.toBeUndefined()
+    await expect(readCompletedTranscript(config, record({
+      normalizedAudio: 'audio.mp4',
+      transcriptJson: 'absent.json',
+      transcriptText: written.text,
+    }))).resolves.toBeUndefined()
+
+    const file = join(directory, written.json)
+    await writeFile(file, 'not json at all')
+    await expect(readCompletedTranscript(config, complete)).resolves.toBeUndefined()
+    await writeFile(file, JSON.stringify({ segments: 'not an array' }))
+    await expect(readCompletedTranscript(config, complete)).resolves.toBeUndefined()
+    await writeFile(file, JSON.stringify({ segments: [{ index: 4, startSeconds: 0, text: '错位。' }] }))
+    await expect(readCompletedTranscript(config, complete)).resolves.toBeUndefined()
+    await writeFile(file, JSON.stringify({ segments: [] }))
+    await expect(readCompletedTranscript(config, complete)).resolves.toBeUndefined()
+  })
+
+  it('reads back the summary audit and ignores one that cannot be replayed', async () => {
+    const { config, id, directory } = await prepared('meeting-summary-audit-')
+    const file = join(directory, 'summary-requests.json')
+    const request = {
+      index: 0,
+      createdAt: '2026-08-19T01:21:00.000Z',
+      provider: 'fixture',
+      model: 'fixture-model',
+      system: 'partial',
+      input: '转写。',
+      maxTokens: 4_096,
+      output: '摘要。',
+    }
+
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([])
+    await writeFile(file, JSON.stringify({ requests: [request] }))
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([request])
+    await writeFile(file, 'not json at all')
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([])
+    await writeFile(file, JSON.stringify({ requests: 'not an array' }))
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([])
+    await writeFile(file, JSON.stringify({ requests: ['not a request'] }))
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([])
+
+    await writeTranscriptProgress(config, id, [{ index: 0, startSeconds: 0, text: '第一段。' }])
+    await removeResumableProgress(config, id)
+    await expect(readSummaryRequests(config, id)).resolves.toEqual([])
+    await expect(readTranscriptProgress(config, id, 1)).resolves.toEqual([])
+  })
+
+  it('reports the stage a resume would start at only for a failed meeting', () => {
+    expect(resumeStage(record({ stage: 'complete', normalizedAudio: 'audio.mp4' }))).toBeUndefined()
+    expect(resumeStage(record())).toBeUndefined()
+    expect(resumeStage(record({ completedChunks: 2 }))).toBe('transcribing')
+    expect(resumeStage(record({ normalizedAudio: 'audio.mp4' }))).toBe('transcribing')
+    expect(resumeStage(record({ normalizedAudio: 'audio.mp4', transcriptJson: 'transcript.json' })))
+      .toBe('summarizing')
+  })
+
+  it('surfaces an unreadable progress or audit file instead of silently starting over', async () => {
+    const { config, id, directory } = await prepared('meeting-progress-unreadable-')
+    await mkdir(join(directory, 'transcript-progress.json'))
+    await mkdir(join(directory, 'summary-requests.json'))
+    await expect(readTranscriptProgress(config, id, 1)).rejects.toThrow()
+    await expect(readSummaryRequests(config, id)).rejects.toThrow()
+    await expect(readCompletedTranscript(config, record({
+      normalizedAudio: 'audio.mp4',
+      transcriptJson: '.',
+      transcriptText: 'transcript.txt',
+    }))).rejects.toThrow()
   })
 })

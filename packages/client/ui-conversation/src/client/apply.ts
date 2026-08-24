@@ -165,6 +165,21 @@ export function apply(ctx: Context): void {
     version: () => slots.getVersion('conversation.view'),
   }
 
+  const composerTools = (): string[] => {
+    const ids: string[] = []
+    for (const entry of slots.entries('conversation.input.tool')) {
+      /* v8 ignore next -- unreachable: list registration validates id at load. */
+      if (entry.options.id === undefined) continue
+      ids.push(entry.options.id)
+    }
+    return ids
+  }
+  const tools = {
+    list: composerTools,
+    subscribe: (fn: () => void) => slots.subscribe('conversation.input.tool', fn),
+    version: () => slots.getVersion('conversation.input.tool'),
+  }
+
   // The per-session input machine registry (SessionInputResolver face; published as
   // ctx.conversation.input by the service below sharing this one instance).
   const inputHub = new InputHub(ctx, t)
@@ -206,11 +221,13 @@ export function apply(ctx: Context): void {
       'conversation.composer.dock': { kind: 'list', scope: 'session' },
       'conversation.input.left': { kind: 'list', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
+      'conversation.input.tool': { kind: 'list', scope: 'session' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+      tools,
       selectWorkspace: async (workspaceId) => {
         const nextId = await workspaces.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {

@@ -3,7 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ResolvedConfig } from './config.ts'
-import { generateAnswer, type QaTurn } from './answer.ts'
+import { generateAnswer, generateDeepAnswer, type AnswerRequest, type QaTurn } from './answer.ts'
 import { generateTitle } from './title.ts'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from './events.ts'
@@ -58,11 +58,17 @@ export type Sender = (message: ServerMessage) => void
  * cancels the one being answered: the recognizer splits on silence, so a pause mid-sentence can
  * end an utterance early, and cancelling would throw away the answer to the real question and
  * leave only the fragment that followed it.
+ *
+ * A Host that configured a deep route answers each of those questions a second time, in depth,
+ * on its own queue. The two queues are separate because a deep route is slow by construction:
+ * sharing one would make the next question's fast answer wait behind the previous question's deep
+ * one, which is the opposite of what the fast track is for.
  */
 export class LiveSession {
   private readonly history: QaTurn[] = []
   private readonly lifetime = new AbortController()
   private tail: Promise<void> = Promise.resolve()
+  private deepTail: Promise<void> = Promise.resolve()
   private background = ''
   private paused = false
   private opened = false
@@ -197,13 +203,16 @@ export class LiveSession {
             return
           }
           if (event.kind === 'start') {
-            target.append('live-assist/answer-start', { id })
+            target.append('live-assist/answer-start', { id, track: 'fast' })
+            // Triage lives on this track alone, so the deep one is queued by its decision to
+            // answer rather than by the utterance: a greeting costs no deep request at all.
+            this.deepAnswer(target, id, question)
             continue
           }
           answer += event.text
-          target.append('live-assist/answer-delta', { id, text: event.text })
+          target.append('live-assist/answer-delta', { id, track: 'fast', text: event.text })
         }
-        target.append('live-assist/answer-end', { id })
+        target.append('live-assist/answer-end', { id, track: 'fast' })
         this.history.push({ question, answer })
         if (this.history.length > this.config.historyTurns) this.history.shift()
       } catch (error) {
@@ -217,16 +226,56 @@ export class LiveSession {
     })
   }
 
-  /** Await every answer this session started. */
-  settled(): Promise<void> {
-    return this.tail
+  /**
+   * Queue the deep answer to a question the fast track decided to answer.
+   *
+   * The history and notes are captured here rather than when the entry runs: this is the moment
+   * the question was asked, and by the time a slow deep route reaches the entry the session may
+   * have answered later questions, which are not context this question was ever asked in.
+   */
+  private deepAnswer(target: Session, id: UtteranceId, question: string): void {
+    const deep = this.config.deep
+    if (deep === undefined) return
+    const signal = this.lifetime.signal
+    const request: AnswerRequest = {
+      background: this.background,
+      history: [...this.history],
+      notes: intervieweeNotes(target, this.config.noteTurns),
+      question,
+    }
+    // Logged on queueing, so the conversation shows the deep answer as pending while it waits
+    // behind an earlier one rather than appearing only once its first token arrives.
+    target.append('live-assist/answer-start', { id, track: 'deep' })
+    this.deepTail = this.deepTail.then(async () => {
+      if (signal.aborted) return
+      try {
+        for await (const text of generateDeepAnswer(this.ctx, this.config, deep, request, signal)) {
+          target.append('live-assist/answer-delta', { id, track: 'deep', text })
+        }
+        target.append('live-assist/answer-end', { id, track: 'deep' })
+      } catch (error) {
+        // Cancellation by disposal is handled exactly as on the fast track, and for the same
+        // reason: the request throws before it can yield again.
+        if (this.lifetime.signal.aborted) return
+        const message = error instanceof Error ? error.message : String(error)
+        this.send({ type: 'error', message, fatal: false })
+      }
+    })
   }
 
-  /** Abort answer generation, release the recognizer context, and reach quiescence. */
+  /** Await every answer this session started, on both tracks. */
+  async settled(): Promise<void> {
+    // The fast queue is what appends to the deep one, so it has to drain first for the read of
+    // `deepTail` below to see every entry it queued.
+    await this.tail
+    await this.deepTail
+  }
+
+  /** Abort answer generation on both tracks, release the recognizer context, and reach quiescence. */
   async dispose(): Promise<void> {
     this.closed = true
     this.lifetime.abort()
     this.worker.close(this.id)
-    await this.tail
+    await this.settled()
   }
 }

@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-llm'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedConfig } from './config.ts'
 import { SUMMARY_REQUESTS_FILENAME, writeMeetingText } from './storage.ts'
-import type { MeetingId, SummaryRequestRecord } from './types.ts'
+import type { CompletedSummaryRequest, MeetingId, SummaryRequestRecord } from './types.ts'
 
 const SUMMARY_TIMEOUT_CODE = 'MEETING_MINUTES_SUMMARY_TIMEOUT'
 const INPUT_ENVELOPE_RESERVE_BYTES = 1_024
@@ -91,11 +91,44 @@ function groupsOf(parts: readonly string[], maxBytes: number): string[][] {
   return groups
 }
 
+async function persistRequests(
+  config: ResolvedConfig,
+  meetingId: MeetingId,
+  requests: readonly SummaryRequestRecord[],
+): Promise<void> {
+  await writeMeetingText(
+    config,
+    meetingId,
+    SUMMARY_REQUESTS_FILENAME,
+    `${JSON.stringify({ requests }, null, 2)}\n`,
+  )
+}
+
+/**
+ * Reuse the completed request a previous attempt made at this position.
+ *
+ * Reduction is deterministic in the transcript, so the request at one position repeats exactly
+ * until the position the previous attempt stopped at. A position whose system instruction or input
+ * differs — as every position does once the transcript itself changed — ends reuse, and it and
+ * every later request are dispatched again.
+ */
+function completedAt(
+  prior: readonly CompletedSummaryRequest[],
+  index: number,
+  system: string,
+  input: string,
+): CompletedSummaryRequest | undefined {
+  const candidate = prior[index]
+  if (candidate?.system !== system || candidate.input !== input) return undefined
+  return { ...candidate, index }
+}
+
 async function callTextModel(
   ctx: Context,
   config: ResolvedConfig,
   meetingId: MeetingId,
   requests: SummaryRequestRecord[],
+  prior: readonly CompletedSummaryRequest[],
   route: SummaryRoute,
   system: string,
   input: string,
@@ -103,6 +136,12 @@ async function callTextModel(
 ): Promise<string> {
   if (Buffer.byteLength(input, 'utf8') > config.summaryMaxInputBytes) {
     throw new Error('meeting-minutes: internal summary input exceeded summaryMaxInputBytes')
+  }
+  const completed = completedAt(prior, requests.length, system, input)
+  if (completed !== undefined) {
+    requests.push(completed)
+    await persistRequests(config, meetingId, requests)
+    return completed.output
   }
   const record: SummaryRequestRecord = {
     index: requests.length,
@@ -114,12 +153,7 @@ async function callTextModel(
     maxTokens: config.summaryMaxOutputTokens,
   }
   requests.push(record)
-  await writeMeetingText(
-    config,
-    meetingId,
-    SUMMARY_REQUESTS_FILENAME,
-    `${JSON.stringify({ requests }, null, 2)}\n`,
-  )
+  await persistRequests(config, meetingId, requests)
   using callDeadline = deadline(signal, config.summaryRequestTimeoutMs, SUMMARY_TIMEOUT_CODE)
   const options: GenerateOptions = {
     provider: route.provider,
@@ -153,12 +187,7 @@ async function callTextModel(
     .trim()
   if (output === '') throw new Error('meeting-minutes: summary model produced no text')
   record.output = output
-  await writeMeetingText(
-    config,
-    meetingId,
-    SUMMARY_REQUESTS_FILENAME,
-    `${JSON.stringify({ requests }, null, 2)}\n`,
-  )
+  await persistRequests(config, meetingId, requests)
   return output
 }
 
@@ -208,11 +237,15 @@ function parseFinal(output: string): MeetingSummary {
 /**
  * Summarize an arbitrary-length transcript through bounded sequential requests.
  *
+ * A retry that keeps the same transcript reuses every intermediate summary the previous attempt
+ * completed, so summarization continues at the request that failed rather than at the first one.
+ *
  * @param ctx Plugin context with LLM services.
  * @param config Resolved plugin configuration.
  * @param meetingId Meeting that owns the summary audit.
  * @param transcript Complete transcript text.
  * @param signal Cancellation signal for every model request.
+ * @param prior Requests a previous attempt completed, reused position by position until one differs.
  * @returns Model-generated topic and Markdown summary.
  */
 export async function summarizeMeeting(
@@ -221,6 +254,7 @@ export async function summarizeMeeting(
   meetingId: MeetingId,
   transcript: string,
   signal: AbortSignal,
+  prior: readonly CompletedSummaryRequest[],
 ): Promise<MeetingSummary> {
   const route = routeOf(ctx, config)
   const requests: SummaryRequestRecord[] = []
@@ -234,7 +268,7 @@ export async function summarizeMeeting(
     for (const [index, part] of transcriptParts.entries()) {
       const input = JSON.stringify({ part: index + 1, total: transcriptParts.length, transcript: part })
       summaries.push(await callTextModel(
-        ctx, config, meetingId, requests, route, PARTIAL_SYSTEM, input, signal,
+        ctx, config, meetingId, requests, prior, route, PARTIAL_SYSTEM, input, signal,
       ))
     }
   }
@@ -244,8 +278,10 @@ export async function summarizeMeeting(
     const finalInput = JSON.stringify({ source: summaries.join('\n\n---\n\n') })
     const finalInputBytes = Buffer.byteLength(finalInput, 'utf8')
     if (finalInputBytes <= config.summaryMaxInputBytes) {
+      // The final request is never reused: its output is the one that still has to parse as JSON,
+      // and a persisted output that failed to parse would otherwise be replayed on every attempt.
       const output = await callTextModel(
-        ctx, config, meetingId, requests, route, FINAL_SYSTEM, finalInput, signal,
+        ctx, config, meetingId, requests, [], route, FINAL_SYSTEM, finalInput, signal,
       )
       return parseFinal(output)
     }
@@ -258,7 +294,7 @@ export async function summarizeMeeting(
     for (const [index, group] of groups.entries()) {
       const input = JSON.stringify({ group: index + 1, total: groups.length, summaries: group })
       reduced.push(await callTextModel(
-        ctx, config, meetingId, requests, route, REDUCE_SYSTEM, input, signal,
+        ctx, config, meetingId, requests, prior, route, REDUCE_SYSTEM, input, signal,
       ))
     }
     const reducedInputBytes = Buffer.byteLength(

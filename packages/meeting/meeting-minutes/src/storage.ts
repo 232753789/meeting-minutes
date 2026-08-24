@@ -5,7 +5,15 @@ import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { ResolvedConfig } from './config.ts'
-import type { MeetingId, MeetingRecord, MeetingStatus, TranscriptSegment } from './types.ts'
+import type {
+  CompletedSummaryRequest,
+  MeetingId,
+  MeetingRecord,
+  MeetingStage,
+  MeetingStatus,
+  TranscriptProgress,
+  TranscriptSegment,
+} from './types.ts'
 
 /** Durable meeting state filename. */
 export const METADATA_FILENAME = 'metadata.json'
@@ -15,6 +23,8 @@ export const NORMALIZED_AUDIO_FILENAME = 'audio.mp4'
 export const TRANSCRIPT_JSON_FILENAME = 'transcript.json'
 /** Plain-text transcript filename. */
 export const TRANSCRIPT_TEXT_FILENAME = 'transcript.txt'
+/** Completed-chunk transcription progress filename, removed once the transcript is complete. */
+export const TRANSCRIPT_PROGRESS_FILENAME = 'transcript-progress.json'
 /** Durable summary request audit filename. */
 export const SUMMARY_REQUESTS_FILENAME = 'summary-requests.json'
 
@@ -163,6 +173,16 @@ export async function updateRecord(
 }
 
 /**
+ * Concatenate the segment texts that make up the summarizer's input.
+ *
+ * @param segments Ordered ASR segments.
+ * @returns Transcript text without timestamps or empty segments.
+ */
+export function transcriptFullText(segments: readonly TranscriptSegment[]): string {
+  return segments.map(segment => segment.text.trim()).filter(Boolean).join('\n')
+}
+
+/**
  * Write full transcript artifacts after every ASR chunk has completed.
  *
  * @param config Resolved plugin configuration.
@@ -178,12 +198,182 @@ export async function writeTranscript(
   const directory = meetingDirectory(config, id)
   const json = TRANSCRIPT_JSON_FILENAME
   const text = TRANSCRIPT_TEXT_FILENAME
-  const fullText = segments.map(segment => segment.text.trim()).filter(Boolean).join('\n')
+  const fullText = transcriptFullText(segments)
   await Promise.all([
     writeFileAtomic(join(directory, json), `${JSON.stringify({ segments }, null, 2)}\n`, PRIVATE_FILE),
     writeFileAtomic(join(directory, text), `${fullText}\n`, PRIVATE_FILE),
   ])
   return { json, text, fullText }
+}
+
+/**
+ * Publish the ASR chunks completed so far so the next attempt can start after them.
+ *
+ * Written before the record's `completedChunks`, so a crash between the two writes leaves progress
+ * ahead of the record rather than transcript text the next attempt would silently drop.
+ *
+ * @param config Resolved plugin configuration.
+ * @param id Meeting id that owns the transcription.
+ * @param segments Completed segments in chunk order.
+ */
+export function writeTranscriptProgress(
+  config: ResolvedConfig,
+  id: MeetingId,
+  segments: readonly TranscriptSegment[],
+): Promise<void> {
+  const progress: TranscriptProgress = { chunkSeconds: config.asrChunkSeconds, segments }
+  return writeMeetingText(config, id, TRANSCRIPT_PROGRESS_FILENAME, `${JSON.stringify(progress, null, 2)}\n`)
+}
+
+/**
+ * Read one optional JSON sidecar as an object.
+ *
+ * Absent, half-written, and not-an-object all mean the same thing to the callers: the work the file
+ * would have saved is done again. A file that exists but cannot be read is not that case.
+ *
+ * @param path Absolute artifact path.
+ * @returns Parsed object, or `undefined` when the file is missing or unusable.
+ */
+async function readJsonObject(path: string): Promise<Record<string, unknown> | undefined> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  try {
+    return objectRecord(JSON.parse(text))
+  } catch {
+    // A half-written hint file costs the work it would have saved; the recording is still stored.
+    return undefined
+  }
+}
+
+function validSegments(value: unknown, chunkSeconds: number, totalChunks: number): TranscriptSegment[] | undefined {
+  if (!Array.isArray(value) || value.length > totalChunks) return undefined
+  const segments: TranscriptSegment[] = []
+  for (const [index, entry] of value.entries()) {
+    const segment = objectRecord(entry)
+    if (segment === undefined) return undefined
+    if (segment.index !== index || segment.startSeconds !== index * chunkSeconds) return undefined
+    if (typeof segment.text !== 'string') return undefined
+    segments.push(segment as unknown as TranscriptSegment)
+  }
+  return segments
+}
+
+/**
+ * Read the completed chunks of an interrupted transcription.
+ *
+ * Progress produced under a different chunk duration or a different chunk count no longer aligns
+ * with the chunks this attempt transcribes, so it is discarded instead of shifting the transcript.
+ *
+ * @param config Resolved plugin configuration.
+ * @param id Validated meeting id.
+ * @param totalChunks Chunks this attempt will transcribe.
+ * @returns Reusable leading segments, empty when none apply.
+ */
+export async function readTranscriptProgress(
+  config: ResolvedConfig,
+  id: MeetingId,
+  totalChunks: number,
+): Promise<TranscriptSegment[]> {
+  const value = await readJsonObject(join(meetingDirectory(config, id), TRANSCRIPT_PROGRESS_FILENAME))
+  if (value === undefined || value.chunkSeconds !== config.asrChunkSeconds) return []
+  return validSegments(value.segments, config.asrChunkSeconds, totalChunks) ?? []
+}
+
+/**
+ * Delete the progress file a completed transcript replaces.
+ *
+ * @param config Resolved plugin configuration.
+ * @param id Validated meeting id.
+ */
+export function removeTranscriptProgress(config: ResolvedConfig, id: MeetingId): Promise<void> {
+  return rm(join(meetingDirectory(config, id), TRANSCRIPT_PROGRESS_FILENAME), { force: true })
+}
+
+/**
+ * Read the published transcript of a meeting whose transcription already completed.
+ *
+ * The playback file is required alongside it because the Markdown artifact links to it, and both
+ * are published in the same record update.
+ *
+ * @param config Resolved plugin configuration.
+ * @param record Complete private meeting record.
+ * @returns Artifact filenames and ordered segments, or `undefined` when this meeting must be
+ * transcribed again.
+ */
+export async function readCompletedTranscript(
+  config: ResolvedConfig,
+  record: MeetingRecord,
+): Promise<{ audioFilename: string; json: string; text: string; segments: TranscriptSegment[] } | undefined> {
+  const { normalizedAudio, transcriptJson, transcriptText } = record
+  if (normalizedAudio === undefined || transcriptJson === undefined || transcriptText === undefined) {
+    return undefined
+  }
+  const value = await readJsonObject(join(meetingDirectory(config, record.id), transcriptJson))
+  if (value === undefined || !Array.isArray(value.segments)) return undefined
+  const segments = validSegments(value.segments, config.asrChunkSeconds, value.segments.length)
+  if (segments === undefined || segments.length === 0) return undefined
+  return { audioFilename: normalizedAudio, json: transcriptJson, text: transcriptText, segments }
+}
+
+/**
+ * Read the leading run of summary requests a previous attempt completed.
+ *
+ * The run stops at the first request without an output — where the previous attempt stopped —
+ * because positions after it no longer line up with the requests this attempt makes.
+ *
+ * @param config Resolved plugin configuration.
+ * @param id Validated meeting id.
+ * @returns Completed requests in dispatch order, empty when the audit is absent or unreadable.
+ */
+export async function readSummaryRequests(
+  config: ResolvedConfig,
+  id: MeetingId,
+): Promise<CompletedSummaryRequest[]> {
+  const value = await readJsonObject(join(meetingDirectory(config, id), SUMMARY_REQUESTS_FILENAME))
+  if (value === undefined || !Array.isArray(value.requests)) return []
+  const completed: CompletedSummaryRequest[] = []
+  for (const entry of value.requests) {
+    const request = objectRecord(entry)
+    if (request === undefined || typeof request.output !== 'string') break
+    completed.push(request as unknown as CompletedSummaryRequest)
+  }
+  return completed
+}
+
+/**
+ * Delete the derived progress and audit files a full reprocess must not reuse.
+ *
+ * @param config Resolved plugin configuration.
+ * @param id Validated meeting id.
+ */
+export async function removeResumableProgress(config: ResolvedConfig, id: MeetingId): Promise<void> {
+  const directory = meetingDirectory(config, id)
+  await Promise.all([
+    rm(join(directory, TRANSCRIPT_PROGRESS_FILENAME), { force: true }),
+    rm(join(directory, SUMMARY_REQUESTS_FILENAME), { force: true }),
+  ])
+}
+
+/**
+ * Report the stage a `resume` retry would start this failed meeting at.
+ *
+ * Only a failed meeting has a stage to resume from; a complete one is reprocessed in full or not
+ * at all. The artifacts named here are the ones {@link readCompletedSegments} and
+ * {@link readTranscriptProgress} let the next attempt reuse.
+ *
+ * @param record Complete private meeting record.
+ * @returns Stage the reusable artifacts allow, or `undefined` when the attempt starts over.
+ */
+export function resumeStage(record: MeetingRecord): MeetingStage | undefined {
+  if (record.stage !== 'failed') return undefined
+  if (record.transcriptJson !== undefined && record.normalizedAudio !== undefined) return 'summarizing'
+  if (record.normalizedAudio !== undefined || record.completedChunks > 0) return 'transcribing'
+  return undefined
 }
 
 /**
@@ -198,6 +388,7 @@ export async function statusOf(config: ResolvedConfig, record: MeetingRecord): P
   if (record.transcriptText !== undefined) {
     transcript = await readFile(join(meetingDirectory(config, record.id), record.transcriptText), 'utf8')
   }
+  const resume = resumeStage(record)
   return {
     id: record.id,
     stage: record.stage,
@@ -212,6 +403,7 @@ export async function statusOf(config: ResolvedConfig, record: MeetingRecord): P
     ...(record.summaryMarkdown === undefined ? {} : { summaryMarkdown: record.summaryMarkdown }),
     ...(record.minutesFilename === undefined ? {} : { minutesFilename: record.minutesFilename }),
     ...(record.error === undefined ? {} : { error: record.error }),
+    ...(resume === undefined ? {} : { resumeFrom: resume }),
   }
 }
 

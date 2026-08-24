@@ -1,7 +1,9 @@
-/** Composer control: a setup dialog before listening, a compact status bar while it runs. */
+/** Composer tool: a setup dialog before listening, a compact status bar while it runs. */
 
 import { useCallback, useState, useSyncExternalStore } from 'react'
-import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, ChoiceRow, IconHeadsetOutline16, Modal, StateDot, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MissingSystemAudioError, requestSystemAudioShare } from './audio-capture.ts'
 import type { LiveAssistControllerInjected } from './contract.ts'
@@ -9,7 +11,7 @@ import type { LiveAssistKey } from './locales.ts'
 import type { ControllerState } from './live-controller.ts'
 import css from './LiveAssistButton.module.css'
 
-type LiveAssistButtonProps = PropsRuntime<'conversation.input.left'> & PropsLocale<'live-assist'>
+type LiveAssistButtonProps = PropsRuntime<'conversation.input.tool'> & PropsLocale<'live-assist'>
 
 const BACKGROUND_KEY = 'dsh.live-assist.background'
 
@@ -42,11 +44,12 @@ export function statusKey(state: ControllerState): LiveAssistKey {
   return 'state.listening'
 }
 
-/** Composer control whose setup lives in a dialog and whose running state is one inline row. */
+/** Composer tool whose setup lives in a dialog and whose running state is one inline row. */
 export function LiveAssistButton(
-  { t, sessionId, controller, isBlankSession }: LiveAssistButtonProps & LiveAssistControllerInjected,
+  {
+    t, sessionId, surface, open, setOpen, controller, isBlankSession,
+  }: LiveAssistButtonProps & LiveAssistControllerInjected,
 ) {
-  const [open, setOpen] = useState(false)
   const [background, setBackground] = useState(readBackground)
   const state = useSyncExternalStore(controller.subscribe, controller.getState)
 
@@ -70,7 +73,7 @@ export function LiveAssistButton(
     // The interview joins the conversation the user is already in; the composer is session-scoped,
     // so there is always one.
     controller.start(background, sessionId, share)
-  }, [background, controller, sessionId])
+  }, [background, controller, sessionId, setOpen])
 
   const shown = failure ?? state.failure
   const failureMessage = shown === undefined
@@ -80,6 +83,22 @@ export function LiveAssistButton(
       : shown.key === 'socket'
         ? t('error.socket', { message: shown.message })
         : t('error.share', { message: shown.message })
+
+  // The drawer row is the tool's catalogue face: what it is and, while it
+  // listens, what it is doing. Setup and controls stay on the bar surface,
+  // which outlives the drawer.
+  if (surface === 'drawer') {
+    return (
+      <ChoiceRow
+        icon={<IconHeadsetOutline16 />}
+        title={t('action.open')}
+        description={t('tool.description')}
+        status={state.running ? t(statusKey(state)) : undefined}
+        disabled={state.running}
+        onSelect={() => { setOpen(true) }}
+      />
+    )
+  }
 
   if (state.running) {
     return (
@@ -96,7 +115,16 @@ export function LiveAssistButton(
 
   return (
     <>
-      <Button variant="ghost" onClick={() => { setOpen(true) }}>{t('action.open')}</Button>
+      <Tooltip label={t('action.open')} side="top" delayMs={500}>
+        <button
+          type="button"
+          className={css.icon}
+          aria-label={t('action.open')}
+          onClick={() => { setOpen(true) }}
+        >
+          <IconHeadsetOutline16 />
+        </button>
+      </Tooltip>
       {open ? (
         <Modal
           open

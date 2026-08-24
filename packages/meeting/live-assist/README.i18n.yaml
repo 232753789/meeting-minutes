@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/meeting/live-assist/README.md
-README.md: dbad56e6878bd8bdd5ab662e96daf8cdc6654524
-README.zh.md: 0efaedf42d53c8ca7a1bbd76c29d80c5546a7490
+README.md: 6f6401e96317eb2b7ad05f020d4668c888772071
+README.zh.md: ae7b6611745056351c90087bb31816ca119a461b

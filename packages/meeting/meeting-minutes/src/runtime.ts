@@ -9,22 +9,40 @@ import {
   availableMinutesFilename,
   listMeetings,
   meetingDisplayName,
+  readCompletedTranscript,
   readRecord,
+  readSummaryRequests,
+  readTranscriptProgress,
   removeMeeting,
+  removeResumableProgress,
+  removeTranscriptProgress,
   renderMinutes,
+  resumeStage,
   statusOf,
+  transcriptFullText,
   updateRecord,
   writeMeetingText,
   writeTranscript,
+  writeTranscriptProgress,
 } from './storage.ts'
 import { summarizeMeeting, type MeetingSummary } from './summary.ts'
 import type {
   MeetingId,
   MeetingListEntry,
   MeetingRecord,
+  MeetingRetryMode,
   MeetingStatus,
   TranscriptSegment,
 } from './types.ts'
+
+/** Everything the summary and Markdown stages need, whether transcribed now or reused. */
+interface TranscribedMeeting {
+  readonly audioFilename: string
+  readonly json: string
+  readonly text: string
+  readonly fullText: string
+  readonly segments: readonly TranscriptSegment[]
+}
 
 interface RuntimeOperations {
   normalize: typeof normalizeAndChunk
@@ -114,16 +132,17 @@ export class MeetingMinutesRuntime {
   }
 
   /**
-   * Admit a durable complete or failed meeting for a full reprocess of its preserved original upload.
+   * Admit a durable complete or failed meeting for another attempt at its preserved original upload.
    * @param id - validated meeting identifier.
+   * @param mode - whether the attempt resumes at the failed stage or reruns the complete chain.
    * @returns whether the retry was accepted, missing, or incompatible with current state.
    * @throws When the runtime is closing or durable metadata cannot be read or updated.
    */
-  retry(id: MeetingId): Promise<MeetingRetryResult> {
+  retry(id: MeetingId, mode: MeetingRetryMode): Promise<MeetingRetryResult> {
     if (this.closed) return Promise.reject(new Error('meeting-minutes: runtime is closing'))
     if (this.active.has(id)) return Promise.resolve({ kind: 'conflict' })
     this.active.add(id)
-    const operation = this.admitRetry(id)
+    const operation = this.admitRetry(id, mode)
     this.admissions.add(operation)
     void operation.finally(() => { this.admissions.delete(operation) }).catch(() => {})
     return operation
@@ -160,24 +179,30 @@ export class MeetingMinutesRuntime {
     }
   }
 
-  private async admitRetry(id: MeetingId): Promise<MeetingRetryResult> {
+  private async admitRetry(id: MeetingId, mode: MeetingRetryMode): Promise<MeetingRetryResult> {
     let enqueued = false
     try {
       const record = await readRecord(this.config, id)
       if (record === undefined) return { kind: 'missing' }
       if (record.stage !== 'failed' && record.stage !== 'complete') return { kind: 'conflict' }
       if (this.closed) throw new Error('meeting-minutes: runtime is closing')
-      delete record.totalChunks
-      delete record.normalizedAudio
-      delete record.transcriptJson
-      delete record.transcriptText
+      // The same judgement the status projection published, so the browser's choice of button and
+      // the work this attempt skips agree; a complete meeting has no failed stage to resume at.
+      const resuming = mode === 'resume' && resumeStage(record) !== undefined
+      if (!resuming) {
+        await removeResumableProgress(this.config, id)
+        delete record.totalChunks
+        delete record.normalizedAudio
+        delete record.transcriptJson
+        delete record.transcriptText
+      }
       delete record.topic
       delete record.summaryMarkdown
       delete record.minutesFilename
       delete record.error
       await updateRecord(this.config, record, {
         stage: 'queued',
-        completedChunks: 0,
+        ...(resuming ? {} : { completedChunks: 0 }),
       })
       if (this.lifetime.signal.aborted) {
         await updateRecord(this.config, record, {
@@ -202,51 +227,83 @@ export class MeetingMinutesRuntime {
     return await this.localWorker.transcribe(path, signal)
   }
 
-  private async process(record: MeetingRecord, signal: AbortSignal): Promise<void> {
+  /**
+   * Produce the transcript, transcribing only the chunks no previous attempt completed.
+   *
+   * A meeting whose transcript is already published skips normalization and ASR entirely. Otherwise
+   * the WAV chunks are cut again — they are temporary — and the chunks a previous attempt already
+   * transcribed are read back from the progress file instead of being sent to the model again.
+   */
+  private async transcribed(record: MeetingRecord, signal: AbortSignal): Promise<TranscribedMeeting> {
+    const completed = await readCompletedTranscript(this.config, record)
+    if (completed !== undefined) {
+      return { ...completed, fullText: transcriptFullText(completed.segments) }
+    }
     await updateRecord(this.config, record, { stage: 'normalizing' })
     const normalized = await this.operations.normalize(this.ctx, this.config, record, signal)
+    const segments: TranscriptSegment[] = await readTranscriptProgress(
+      this.config,
+      record.id,
+      normalized.chunks.length,
+    )
+    const resumed = segments.length
     await updateRecord(this.config, record, {
       normalizedAudio: normalized.audioFilename,
       totalChunks: normalized.chunks.length,
+      completedChunks: resumed,
       stage: 'transcribing',
     })
-    const segments: TranscriptSegment[] = []
     try {
-      for (const [index, chunk] of normalized.chunks.entries()) {
+      for (const [offset, chunk] of normalized.chunks.slice(resumed).entries()) {
         signal.throwIfAborted()
+        const index = resumed + offset
         const text = await this.transcribe(chunk, signal)
         segments.push({ index, startSeconds: index * this.config.asrChunkSeconds, text })
-        await updateRecord(this.config, record, { completedChunks: index + 1 })
+        await writeTranscriptProgress(this.config, record.id, segments)
+        await updateRecord(this.config, record, { completedChunks: segments.length })
       }
       const transcript = await writeTranscript(this.config, record.id, segments)
-      await updateRecord(this.config, record, {
-        stage: 'summarizing',
-        transcriptJson: transcript.json,
-        transcriptText: transcript.text,
-      })
-      const summary: MeetingSummary = await this.operations.summarize(
-        this.ctx,
-        this.config,
-        record.id,
-        transcript.fullText,
-        signal,
-      )
-      const minutesFilename = await availableMinutesFilename(this.config, record, summary.topic)
-      await writeMeetingText(
-        this.config,
-        record.id,
-        minutesFilename,
-        renderMinutes(record, normalized.audioFilename, summary.topic, summary.summaryMarkdown, segments),
-      )
-      await updateRecord(this.config, record, {
-        stage: 'complete',
-        topic: summary.topic,
-        summaryMarkdown: summary.summaryMarkdown,
-        minutesFilename,
-      })
+      await removeTranscriptProgress(this.config, record.id)
+      return { audioFilename: normalized.audioFilename, segments, ...transcript }
     } finally {
       await rm(normalized.chunkDirectory, { recursive: true, force: true })
     }
+  }
+
+  private async process(record: MeetingRecord, signal: AbortSignal): Promise<void> {
+    const transcribed = await this.transcribed(record, signal)
+    await updateRecord(this.config, record, {
+      stage: 'summarizing',
+      transcriptJson: transcribed.json,
+      transcriptText: transcribed.text,
+    })
+    const summary: MeetingSummary = await this.operations.summarize(
+      this.ctx,
+      this.config,
+      record.id,
+      transcribed.fullText,
+      signal,
+      await readSummaryRequests(this.config, record.id),
+    )
+    const minutesFilename = await availableMinutesFilename(this.config, record, summary.topic)
+    await writeMeetingText(
+      this.config,
+      record.id,
+      minutesFilename,
+      renderMinutes(
+        record,
+        transcribed.audioFilename,
+        summary.topic,
+        summary.summaryMarkdown,
+        transcribed.segments,
+      ),
+    )
+    await updateRecord(this.config, record, {
+      stage: 'complete',
+      topic: summary.topic,
+      summaryMarkdown: summary.summaryMarkdown,
+      minutesFilename,
+    })
   }
 
   /**

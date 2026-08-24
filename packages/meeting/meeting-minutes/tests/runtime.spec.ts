@@ -110,7 +110,10 @@ describe('meeting processing runtime', () => {
     expect(status?.stage).toBe('failed')
     expect(status?.error).toContain('ASR unavailable')
 
-    const [firstRetry, secondRetry] = await Promise.all([runtime.retry(id), runtime.retry(id)])
+    const [firstRetry, secondRetry] = await Promise.all([
+      runtime.retry(id, 'resume'),
+      runtime.retry(id, 'resume'),
+    ])
     expect([firstRetry.kind, secondRetry.kind].sort()).toEqual(['accepted', 'conflict'])
     await vi.waitFor(() => { expect(remoteAsr).toHaveBeenCalledTimes(2) })
 
@@ -185,7 +188,7 @@ describe('meeting history projection and reprocessing', () => {
     await runtime.dispose()
   })
 
-  it('reprocesses a complete meeting and refuses one that is still queued', async () => {
+  it('reprocesses a complete meeting in full even when asked to resume, and refuses a queued one', async () => {
     const root = await mkdtemp(join(tmpdir(), 'meeting-reprocess-'))
     const config = resolveConfig({ asrMode: 'remote', storageRoot: root, timeZone: 'Asia/Shanghai' })
     const done = persisted('meeting-20260819T091500-0000000000c2', {
@@ -217,8 +220,8 @@ describe('meeting history projection and reprocessing', () => {
       summarize: async () => ({ topic: '第二次解析', summaryMarkdown: '### 决策\n\n第二次。' }),
     })
 
-    await expect(runtime.retry(waiting.id)).resolves.toEqual({ kind: 'conflict' })
-    await expect(runtime.retry(done.id)).resolves.toEqual({ kind: 'accepted' })
+    await expect(runtime.retry(waiting.id, 'resume')).resolves.toEqual({ kind: 'conflict' })
+    await expect(runtime.retry(done.id, 'resume')).resolves.toEqual({ kind: 'accepted' })
     await vi.waitFor(async () => { expect((await runtime.status(done.id))?.stage).toBe('complete') })
 
     const status = await runtime.status(done.id)

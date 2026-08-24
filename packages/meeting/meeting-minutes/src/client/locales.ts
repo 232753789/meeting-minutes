@@ -2,6 +2,7 @@
 
 export const zh = {
   'action.open': '会议纪要',
+  'tool.description': '录制会议音频，自动转写并整理成结构化纪要。',
   'action.close': '关闭',
   'action.start': '开始录音',
   'action.upload': '上传录音',
@@ -21,6 +22,9 @@ export const zh = {
   'action.cancel': '取消',
   'action.recordAgain': '重新录音',
   'action.retryProcessing': '重新解析',
+  'action.retryProcessingHint': '丢弃已完成的转码、转写与摘要，从原始录音完整重跑。',
+  'action.resumeProcessing': '继续解析',
+  'action.resumeProcessingHint': '保留已完成的转码、转写分片与摘要请求，从失败的位置继续。',
   'action.download': '下载 Markdown',
   'action.downloadTranscript': '下载转写原文',
   'action.downloadOriginal': '下载原始音频',
@@ -95,6 +99,7 @@ export const zh = {
 /** English recorder, history, and result copy. */
 export const en: Record<keyof typeof zh, string> = {
   'action.open': 'Meeting minutes',
+  'tool.description': 'Records the meeting, transcribes it, and writes structured minutes.',
   'action.close': 'Close',
   'action.start': 'Start recording',
   'action.upload': 'Upload recording',
@@ -114,6 +119,9 @@ export const en: Record<keyof typeof zh, string> = {
   'action.cancel': 'Cancel',
   'action.recordAgain': 'Record again',
   'action.retryProcessing': 'Process again',
+  'action.retryProcessingHint': 'Discards the transcode, transcript, and summary, and reruns everything from the original recording.',
+  'action.resumeProcessing': 'Resume processing',
+  'action.resumeProcessingHint': 'Keeps the transcoded audio, the transcribed chunks, and the completed summary requests, and continues at what failed.',
   'action.download': 'Download Markdown',
   'action.downloadTranscript': 'Download transcript text',
   'action.downloadOriginal': 'Download original audio',

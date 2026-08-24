@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Optional Web profile bundle for browser-recorded meeting minutes. Its browser half contributes a card to the plugin configuration page, opens on the stored meeting history, records the microphone — optionally mixed with the computer's own audio output — or uploads an existing MP4, shows progress, reprocesses a stored meeting, and downloads the preserved original, the plain-text transcript, or the completed Markdown; its Host half streams the original upload to private storage, transcodes it to MP4/AAC unless it already is MP4, transcribes sequential 16 kHz mono WAV chunks through Qwen3-ASR-1.7B, and summarizes the full transcript through `ctx.llm`. It does not modify `agent-loop` or the shipped Web profile.
+Optional Web profile bundle for browser-recorded meeting minutes. Its browser half contributes a card to the plugin configuration page, seats a microphone icon in the composer's tool row — where the tool drawer beside it also names the tool — opens on the stored meeting history, records the microphone — optionally mixed with the computer's own audio output — or uploads an existing MP4, shows progress, resumes or fully reprocesses a stored meeting, and downloads the preserved original, the plain-text transcript, or the completed Markdown; its Host half streams the original upload to private storage, transcodes it to MP4/AAC unless it already is MP4, transcribes sequential 16 kHz mono WAV chunks through Qwen3-ASR-1.7B, and summarizes the full transcript through `ctx.llm`. It does not modify `agent-loop` or the shipped Web profile.
 
 ## Install
 
@@ -125,6 +125,7 @@ One recording produces:
 ├── audio.mp4                 # only when the original is not MP4
 ├── transcript.json
 ├── transcript.txt
+├── transcript-progress.json   # only while transcription is unfinished
 ├── summary-requests.json
 └── YYYY-MM-DD_HH-mm_<model-topic>_<minutes>m.md
 ```
@@ -139,17 +140,21 @@ The route family is `/meeting-minutes/api`. It accepts only loopback Host values
 | `POST /meetings` | Stream one recording or selected file; `x-meeting-source-filename` carries a percent-encoded display name |
 | `GET /meetings/<id>` | Stage, progress, transcript, summary, and artifact availability |
 | `DELETE /meetings/<id>` | Permanently remove one meeting directory and every artifact in it |
-| `POST /meetings/<id>/retry` | Reprocess a complete or failed meeting from its preserved original |
+| `POST /meetings/<id>/retry` | Process a complete or failed meeting again; `?mode=restart` reruns the whole chain instead of resuming |
 | `GET /meetings/<id>/original` | Download the preserved browser recording |
 | `GET /meetings/<id>/audio` | Play or download the MP4 playback file |
 | `GET /meetings/<id>/transcript` | Download the plain-text transcript under the published minutes name |
 | `GET /meetings/<id>/minutes` | Download the final Markdown |
 
-A history row is named by its final Markdown filename once summarized, then by the uploaded filename, then by the stored recording filename. An uploaded name is display-only metadata: it never selects a path, and the stored file keeps the fixed name derived from its media type. A record left nonterminal by a Host restart is listed as failed before any read republishes it.
+`transcript-progress.json` holds the ASR chunks finished so far and is deleted once the full transcript is published; it is what lets an interrupted transcription continue instead of starting over. A history row is named by its final Markdown filename once summarized, then by the uploaded filename, then by the stored recording filename. An uploaded name is display-only metadata: it never selects a path, and the stored file keeps the fixed name derived from its media type. A record left nonterminal by a Host restart is listed as failed before any read republishes it.
 
 ## Lifecycle
 
-Deleting a meeting removes its whole directory, including the preserved original recording; it is refused while the processing queue owns that meeting, and the browser asks for a second click before sending it. Only one meeting runs through normalization, ASR, and summary at a time. A retry is accepted only for an inactive meeting whose durable stage is `complete` or `failed`; it preserves the original upload, clears derived metadata, and reruns normalization, ASR, and summary from the beginning. Reprocessing a complete meeting overwrites any transcoded MP4, the transcript, and the summary audit, and leaves the previous topic's Markdown in the directory while metadata points only at the new artifacts. Concurrent retries for the same meeting return a conflict, and retry never changes the configured local or remote ASR destination. Plugin disposal removes the route first, aborts active request bodies and model calls, terminates the persistent Python process, and waits for retry admission and the complete task chain. A nonterminal metadata record observed after a Host restart becomes a durable failed record that can be retried.
+Deleting a meeting removes its whole directory, including the preserved original recording; it is refused while the processing queue owns that meeting, and the browser asks for a second click before sending it. Only one meeting runs through normalization, ASR, and summary at a time. A retry is accepted only for an inactive meeting whose durable stage is `complete` or `failed`, and it always preserves the original upload. Concurrent retries for the same meeting return a conflict, and retry never changes the configured local or remote ASR destination.
+
+A retry either resumes or restarts, and the status a meeting publishes says which one it offers. `resumeFrom` names the stage a resume would begin at — `summarizing` once the transcript is published, `transcribing` once the recording is transcoded or any chunk is done — and is absent when there is nothing to keep. A resume reuses the transcoded MP4, every ASR chunk recorded in `transcript-progress.json`, and every intermediate summary in `summary-requests.json`, so only the failed step and what follows it cost anything; the WAV chunks are cut again because they are temporary. The request that produces the final JSON is always sent again, since its output is the one that still has to parse. `?mode=restart` clears the derived metadata, deletes the progress and audit files, and reruns the complete chain, which is also what a complete meeting gets because it has no failed stage to resume at. Either way the previous topic's Markdown stays in the directory while metadata points only at the new artifacts.
+
+Summary reuse is position-based: request *n* of the new attempt reuses request *n* of the audit only when its system instruction and input are identical, so a meeting transcribed again pays for every summary request again. Plugin disposal removes the route first, aborts active request bodies and model calls, terminates the persistent Python process, and waits for retry admission and the complete task chain. A nonterminal metadata record observed after a Host restart becomes a durable failed record that can be retried.
 
 ## Model Experience
 
@@ -161,7 +166,7 @@ The configured summary route receives the full transcript when it fits `summaryM
 
 #### Token effect
 
-Each summary is an independent auxiliary model request. The number of calls grows with transcript length; every input is capped by `summaryMaxInputBytes` and every output by `summaryMaxOutputTokens`. A reduction round must make the combined input smaller, and processing fails after `summaryMaxReductionRounds` rounds instead of continuing indefinitely with an unsuitable model. Recording, normalization, and ASR have no direct LLM token effect.
+Each summary is an independent auxiliary model request. The number of calls grows with transcript length; every input is capped by `summaryMaxInputBytes` and every output by `summaryMaxOutputTokens`. A resumed attempt replays the intermediate summaries persisted by the previous one and spends tokens only on the failed request and what follows it; a restart, or a meeting transcribed again, pays for all of them. A reduction round must make the combined input smaller, and processing fails after `summaryMaxReductionRounds` rounds instead of continuing indefinitely with an unsuitable model. Recording, normalization, and ASR have no direct LLM token effect.
 
 #### KV Cache effect
 
@@ -172,7 +177,7 @@ Summary requests are independent of the Agent conversation and of one another. T
 - **No speaker diarization** — every transcript is plain meeting text; the plugin never invents speaker identities.
 - **Coarse timestamps only** — transcript timestamps mark fixed ASR chunk starts. Phrase- or word-level alignment requires a separate forced-aligner model and is not implemented.
 - **Loopback browser only** — the raw upload and download routes intentionally reject LAN Host values until the Web surface has an authentication layer or exposes a reusable authenticated route helper.
-- **No mid-stage resume** — retry reuses the retained original recording but restarts normalization, ASR, and summary instead of continuing from a completed chunk or summary request.
+- **No resume inside one chunk or request** — a resume continues at the ASR chunk or summary request that failed, never partway through one. A chunk whose ASR call failed at the last second is transcribed again in full.
 - **System audio depends on the browser** — the plugin can only ask for a share with audio. Firefox and Safari never provide it, and older Chrome builds provide it only on Windows and ChromeOS. There is no Host-side capture path that would work without a browser share or a virtual loopback device.
 - **The share stays visible while recording** — capturing computer audio keeps a screen share alive for the whole meeting, so the browser shows its sharing banner and the operating system shows its sharing indicator. Only audio is recorded; the shared video is never read.
 - **Platform model variance** — Qwen3-ASR upstream support and performance vary across CUDA, MPS, and CPU. The package validates files and reports runtime failures but cannot guarantee accelerator compatibility.

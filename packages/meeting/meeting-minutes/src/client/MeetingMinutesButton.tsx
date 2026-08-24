@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
+  ChoiceRow,
   IconDownloadOutline16,
+  IconMicrophoneOutline16,
   IconStopFill16,
   Modal,
   StateDot,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -14,6 +17,7 @@ import type {
   MeetingDeleted,
   MeetingList,
   MeetingListEntry,
+  MeetingRetryMode,
   MeetingStage,
   MeetingStatus,
 } from '../types.ts'
@@ -23,7 +27,7 @@ import css from './MeetingMinutesButton.module.css'
 
 /** `idle` is the history list; every other value belongs to one open meeting. */
 type LocalPhase = 'idle' | 'requesting' | 'recording' | 'uploading' | 'opening' | 'retrying' | MeetingStage
-type MeetingMinutesButtonProps = PropsRuntime<'conversation.input.left'> & PropsLocale<'meeting-minutes'>
+type MeetingMinutesButtonProps = PropsRuntime<'conversation.input.tool'> & PropsLocale<'meeting-minutes'>
 
 const API_PATH = '/meeting-minutes/api/meetings'
 /** Microphone selection meaning "whatever the operating system currently uses". */
@@ -137,8 +141,7 @@ async function jsonResponse<T>(response: Response): Promise<T> {
 }
 
 /** Composer control whose modal keeps the meeting history and one recording/result lifecycle in local state. */
-export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
-  const [open, setOpen] = useState(false)
+export function MeetingMinutesButton({ t, surface, open, setOpen }: MeetingMinutesButtonProps) {
   const [phase, setPhase] = useState<LocalPhase>('idle')
   const [elapsed, setElapsed] = useState(0)
   const [meetings, setMeetings] = useState<readonly MeetingListEntry[] | null>(null)
@@ -332,7 +335,7 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
       setError(t('error.recorder', { message: errorMessage(recorderError) }))
       setPhase('failed')
     }
-  }, [capture, leaveList, releaseStream, submit, t])
+  }, [capture, leaveList, releaseStream, setOpen, submit, t])
 
   const uploadFile = useCallback(async (file: File) => {
     leaveList(file.name)
@@ -360,7 +363,7 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
     setPhase('idle')
   }, [])
 
-  const retryProcessing = useCallback(async () => {
+  const retryProcessing = useCallback(async (mode: MeetingRetryMode) => {
     if (meetingId === null) return
     setPhase('retrying')
     setError(null)
@@ -370,8 +373,13 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
       return withoutError
     })
     try {
-      const response = await fetch(`${API_PATH}/${encodeURIComponent(meetingId)}/retry`, { method: 'POST' })
+      const response = await fetch(
+        `${API_PATH}/${encodeURIComponent(meetingId)}/retry?mode=${mode}`,
+        { method: 'POST' },
+      )
       await jsonResponse<MeetingAccepted>(response)
+      // A resumed attempt keeps the playback file and the chunks already transcribed, so the panel
+      // keeps showing them; a full reprocess discards exactly what the Host discards.
       setMeeting((current) => {
         if (current === null) return null
         const {
@@ -381,9 +389,17 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
           summaryMarkdown: _summaryMarkdown,
           minutesFilename: _minutesFilename,
           error: _error,
+          resumeFrom: _resumeFrom,
           ...retained
         } = current
-        return { ...retained, stage: 'queued', completedChunks: 0, audioReady: false }
+        return mode === 'resume'
+          ? {
+            ...retained,
+            ...(current.totalChunks === undefined ? {} : { totalChunks: current.totalChunks }),
+            ...(current.transcript === undefined ? {} : { transcript: current.transcript }),
+            stage: 'queued',
+          }
+          : { ...retained, stage: 'queued', completedChunks: 0, audioReady: false }
       })
       setPhase('queued')
     } catch (retryError) {
@@ -465,23 +481,39 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
   const processing = phase === 'uploading' || phase === 'retrying' || phase === 'opening' || phase === 'queued'
     || phase === 'normalizing' || phase === 'transcribing' || phase === 'summarizing'
   const reprocessable = meetingId !== null && (meeting?.stage === 'failed' || meeting?.stage === 'complete')
+  const resumeFrom = meeting?.stage === 'failed' ? meeting.resumeFrom : undefined
   const buttonLabel = phase === 'recording'
     ? `${t('state.recording')} ${timerText(elapsed)}`
     : t('action.open')
 
+  // The drawer row is the tool's catalogue face; the dialog it opens carries
+  // every control, so a running recording keeps the row reachable.
+  if (surface === 'drawer') {
+    return (
+      <ChoiceRow
+        icon={<IconMicrophoneOutline16 />}
+        title={t('action.open')}
+        description={t('tool.description')}
+        status={phase === 'idle' ? undefined : buttonLabel}
+        onSelect={() => { setOpen(true) }}
+      />
+    )
+  }
+
   return (
     <>
-      <button
-        type="button"
-        className={css.toolbarButton}
-        data-recording={phase === 'recording' ? 'true' : 'false'}
-        onClick={() => { setOpen(true) }}
-        aria-label={buttonLabel}
-        title={buttonLabel}
-      >
-        <span className={css.mic} aria-hidden="true" />
-        {phase === 'recording' && <span className={css.toolbarTimer}>{timerText(elapsed)}</span>}
-      </button>
+      <Tooltip label={buttonLabel} side="top" delayMs={500}>
+        <button
+          type="button"
+          className={css.toolbarButton}
+          data-recording={phase === 'recording' ? 'true' : 'false'}
+          onClick={() => { setOpen(true) }}
+          aria-label={buttonLabel}
+        >
+          <IconMicrophoneOutline16 />
+          {phase === 'recording' && <span className={css.toolbarTimer}>{timerText(elapsed)}</span>}
+        </button>
+      </Tooltip>
       <Modal
         open={open}
         onClose={() => { setOpen(false) }}
@@ -562,8 +594,23 @@ export function MeetingMinutesButton({ t }: MeetingMinutesButtonProps) {
                 {t('action.recordAgain')}
               </Button>
             )}
+            {resumeFrom !== undefined && (
+              <Button
+                variant="primary"
+                onClick={() => { void retryProcessing('resume') }}
+                disabled={processing}
+                title={t('action.resumeProcessingHint')}
+              >
+                {t('action.resumeProcessing')}
+              </Button>
+            )}
             {reprocessable && (
-              <Button variant="primary" onClick={() => { void retryProcessing() }} disabled={processing}>
+              <Button
+                variant={resumeFrom === undefined ? 'primary' : 'outline'}
+                onClick={() => { void retryProcessing('restart') }}
+                disabled={processing}
+                title={t('action.retryProcessingHint')}
+              >
                 {t('action.retryProcessing')}
               </Button>
             )}

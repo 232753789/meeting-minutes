@@ -7,3 +7,6 @@
 .notice { margin: 4px 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--dsh-fill-secondary, #f1f1f3); color: var(--dsh-text-secondary, #666); font-size: 12px; line-height: 1.6; }
 .hints { margin: 0 0 12px; padding-left: 18px; color: var(--dsh-text-secondary, #666); font-size: 12px; }
 .actions { display: flex; gap: 8px; }
+.icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.icon:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.icon:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--dsw-alias-border-l3); }

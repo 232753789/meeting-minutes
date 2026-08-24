@@ -174,8 +174,8 @@ describe('LiveSession', () => {
     expect(target.types.filter(type => type === 'live-assist/answer-end')).toHaveLength(2)
     expect(target.appended.filter(entry => entry.type === 'live-assist/answer-delta'))
       .toEqual([
-        { type: 'live-assist/answer-delta', data: { id: 's1-1', text: '第一答' } },
-        { type: 'live-assist/answer-delta', data: { id: 's1-2', text: '第二答' } },
+        { type: 'live-assist/answer-delta', data: { id: 's1-1', track: 'fast', text: '第一答' } },
+        { type: 'live-assist/answer-delta', data: { id: 's1-2', track: 'fast', text: '第二答' } },
       ])
     await session.dispose()
   })
@@ -273,6 +273,152 @@ describe('LiveSession', () => {
     speak(worker, 1, '一个问题')
     await session.dispose()
     await vi.waitFor(() => { expect(target.types).not.toContain('live-assist/answer-end') })
+  })
+})
+
+/** A Host that configured the optional second answer route. */
+const DEEP = {
+  deepProvider: 'deep-vendor',
+  deepModel: 'deep-model',
+  deepMaxOutputTokens: 900,
+  deepRequestTimeoutMs: 60_000,
+}
+
+describe('LiveSession deep track', () => {
+  it('answers the same question a second time against the deep route', async () => {
+    const { session, worker, target, requests } = await harness(
+      [{ deltas: ['ANSWER\n快答'] }, { deltas: ['深答一', '深答二'] }],
+      DEEP,
+    )
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    expect(target.appended.filter(entry => entry.data.track === 'deep').map(entry => entry.type)).toEqual([
+      'live-assist/answer-start',
+      'live-assist/answer-delta',
+      'live-assist/answer-delta',
+      'live-assist/answer-end',
+    ])
+    expect(requests[1]).toMatchObject({ provider: 'deep-vendor', model: 'deep-model', maxTokens: 900 })
+    await session.dispose()
+  })
+
+  it('sends the same question and background down the deep route', async () => {
+    const { session, worker, requests } = await harness(
+      [{ deltas: ['ANSWER\n快答'] }, { deltas: ['深答'] }],
+      DEEP,
+    )
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    const content = requests[1]?.messages[0]?.content
+    const text = Array.isArray(content) && content[0]?.type === 'text' ? content[0].text : ''
+    expect(text).toContain('讲讲你的经验')
+    expect(text).toContain('我的背景')
+    await session.dispose()
+  })
+
+  it('passes the reasoning effort the deployment named', async () => {
+    const { session, worker, requests } = await harness(
+      [{ deltas: ['ANSWER\n快答'] }, { deltas: ['深答'] }],
+      { ...DEEP, deepReasoningEffort: 'high' },
+    )
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    expect(requests[1]?.reasoningEffort).toBe('high')
+    await session.dispose()
+  })
+
+  it('makes no deep request for an utterance the fast track skipped', async () => {
+    const { session, worker, target, requests } = await harness([{ deltas: ['SKIP\n'] }], DEEP)
+    speak(worker, 1, '嗯好的')
+    await session.settled()
+    expect(requests).toHaveLength(1)
+    expect(target.appended.some(entry => entry.data.track === 'deep')).toBe(false)
+    await session.dispose()
+  })
+
+  it('makes one request only when no deep route is configured', async () => {
+    const { session, worker, target, requests } = await harness([{ deltas: ['ANSWER\n只有快答'] }])
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    expect(requests).toHaveLength(1)
+    expect(target.appended.every(entry => entry.data.track !== 'deep')).toBe(true)
+    await session.dispose()
+  })
+
+  it('reports a deep-answer failure without ending the session', async () => {
+    const { session, worker, sent, target } = await harness(
+      [{ deltas: ['ANSWER\n快答'] }, { deltas: [], throws: new Error('深度路不可用') }],
+      DEEP,
+    )
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    expect(sent).toContainEqual({ type: 'error', message: '深度路不可用', fatal: false })
+    // The fast answer stands on its own; a failed deep request does not take it down.
+    expect(target.appended.some(entry =>
+      entry.type === 'live-assist/answer-end' && entry.data.track === 'fast')).toBe(true)
+    await session.dispose()
+  })
+
+  it('stringifies a non-Error deep-route failure', async () => {
+    const { session, worker, sent } = await harness(
+      [{ deltas: ['ANSWER\n快答'] }, { deltas: [], throwsValue: '深度路返回了字符串' }],
+      DEEP,
+    )
+    speak(worker, 1, '讲讲你的经验')
+    await session.settled()
+    expect(sent.at(-1)).toMatchObject({ type: 'error', message: '深度路返回了字符串' })
+    await session.dispose()
+  })
+
+  it('drops a queued deep answer the session ended before it started', async () => {
+    const config = resolveConfig(Object.assign({ localModelPath: await modelDirectory() }, DEEP))
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const ctx = {
+      logger: { warn: () => {} },
+      get: () => undefined,
+      agentDefaultModel: { currentSelection: () => ({ provider: 'fake', model: 'fake-model' }) },
+      llm: {
+        stream: (options: { provider: string }) => (async function* replay() {
+          if (options.provider === 'deep-vendor') {
+            yield { type: 'text-delta', index: 0, text: '深答开头' }
+            await gate
+            yield { type: 'finish', reason: { kind: 'stop' } }
+            return
+          }
+          yield { type: 'text-delta', index: 0, text: 'ANSWER\n快答' }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        })(),
+      },
+    }
+    const worker = new FakeWorker()
+    const target = new FakeTargetSession()
+    const session = new LiveSession(
+      ctx as never,
+      config,
+      worker as unknown as LiveAsrWorker,
+      LiveSessionId('s1'),
+      () => {},
+    )
+    await session.start('', target as unknown as Session)
+    speak(worker, 1, '第一问')
+    // The first deep answer is now holding the deep queue open at its gate.
+    await vi.waitFor(() => {
+      expect(target.appended.some(entry =>
+        entry.type === 'live-assist/answer-delta' && entry.data.track === 'deep')).toBe(true)
+    })
+    speak(worker, 2, '第二问')
+    await vi.waitFor(() => {
+      expect(target.appended.some(entry =>
+        entry.type === 'live-assist/answer-start' && entry.data.track === 'deep'
+        && entry.data.id === 's1-2')).toBe(true)
+    })
+    const disposal = session.dispose()
+    release?.()
+    await disposal
+    // Neither the gated request nor the one queued behind it may write an answer after the end.
+    expect(target.appended.some(entry =>
+      entry.type === 'live-assist/answer-end' && entry.data.track === 'deep')).toBe(false)
   })
 })
 

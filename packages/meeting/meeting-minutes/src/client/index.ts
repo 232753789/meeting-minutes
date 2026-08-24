@@ -31,8 +31,8 @@ export const inject = ['slots', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'meeting-minutes: dictionaries')
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
+  ctx.slots.inject('conversation.input.tool', () => ctx.slots.register({
+    name: 'conversation.input.tool',
     id: 'meeting-minutes',
     order: 100,
     locale: NS,

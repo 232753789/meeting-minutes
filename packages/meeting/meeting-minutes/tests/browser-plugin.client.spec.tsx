@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MeetingMinutesButton } from '../src/client/MeetingMinutesButton.tsx'
@@ -93,6 +93,15 @@ function props(): ComponentProps<typeof MeetingMinutesButton> {
   return { t } as unknown as ComponentProps<typeof MeetingMinutesButton>
 }
 
+/** The tool drawer's half of the contract: it, not the entry, holds the open flag. */
+function Tool(
+  { surface = 'bar', setOpen }: { surface?: 'bar' | 'drawer'; setOpen?: (open: boolean) => void },
+) {
+  const [open, hold] = useState(false)
+  const seat = { ...props(), surface, open, setOpen: setOpen ?? hold }
+  return <MeetingMinutesButton {...seat} />
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status })
 }
@@ -154,7 +163,7 @@ describe('meeting-minutes browser recorder', () => {
       .mockResolvedValueOnce(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
       .mockResolvedValueOnce(json(COMPLETE))
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -184,7 +193,7 @@ describe('meeting-minutes browser recorder', () => {
       .mockResolvedValueOnce(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
       .mockResolvedValueOnce(json(COMPLETE))
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -213,7 +222,7 @@ describe('meeting-minutes browser recorder', () => {
         getDisplayMedia: vi.fn(async () => fakeDisplayStream(false)),
       },
     })
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -232,7 +241,7 @@ describe('meeting-minutes browser recorder', () => {
       .mockResolvedValueOnce(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
       .mockResolvedValueOnce(json(COMPLETE))
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -260,7 +269,7 @@ describe('meeting-minutes browser recorder', () => {
       .mockResolvedValueOnce(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
       .mockResolvedValueOnce(json(COMPLETE))
     vi.stubGlobal('fetch', fetchMock)
-    const view = render(<MeetingMinutesButton {...props()} />)
+    const view = render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -280,7 +289,7 @@ describe('meeting-minutes browser recorder', () => {
     await screen.findByText('会议纪要已完成')
     view.unmount()
 
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
     expect(screen.getByLabelText<HTMLSelectElement>('麦克风').value).toBe('none')
@@ -311,7 +320,7 @@ describe('meeting-minutes browser recorder', () => {
         minutesFilename: 'minutes.md',
       }))
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -328,9 +337,48 @@ describe('meeting-minutes browser recorder', () => {
     expect(screen.getByText('重试会议')).toBeTruthy()
     expect(screen.getByText('重试后的完整转写')).toBeTruthy()
     const retry = fetchMock.mock.calls[3]
-    expect(retry?.[0]).toBe(`${API}/${MEETING_ID}/retry`)
+    expect(retry?.[0]).toBe(`${API}/${MEETING_ID}/retry?mode=restart`)
     expect((retry?.[1] as RequestInit).method).toBe('POST')
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(5) })
+  })
+
+  it('resumes a failed meeting at the stage it reports and keeps what already finished', async () => {
+    const failed = {
+      id: MEETING_ID,
+      stage: 'failed',
+      startedAt: '2026-08-19T01:15:00.000Z',
+      endedAt: '2026-08-19T01:20:00.000Z',
+      updatedAt: '2026-08-19T01:21:00.000Z',
+      completedChunks: 2,
+      totalChunks: 3,
+      audioReady: true,
+      transcript: '已经完成的两段转写',
+      error: 'ASR unavailable',
+      resumeFrom: 'transcribing',
+    }
+    let status: unknown = failed
+    const fetchMock = vi.fn((input: string, init?: RequestInit) => {
+      if (input === API && init?.method === undefined) return Promise.resolve(json(HISTORY))
+      if (input === `${API}/${MEETING_ID}`) return Promise.resolve(json(status))
+      if (input === `${API}/${MEETING_ID}/retry?mode=resume`) {
+        status = { ...COMPLETE, topic: '续跑后的周会' }
+        return Promise.resolve(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
+      }
+      throw new Error(`unexpected request ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<Tool />)
+
+    fireEvent.click(screen.getByLabelText('会议纪要'))
+    fireEvent.click(await screen.findByRole('button', { name: /^2026-08-19_09-15_项目周会_5m\.md/ }))
+    await screen.findByText('处理失败')
+
+    // Both offers are present: continue at the failed chunk, or pay for the whole chain again.
+    expect(screen.getByRole('button', { name: '重新解析' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '继续解析' }))
+
+    await screen.findByText('续跑后的周会')
+    expect(screen.queryByRole('button', { name: '继续解析' })).toBeNull()
   })
 
   it('does not offer processing retry when recording failed before upload', async () => {
@@ -339,7 +387,7 @@ describe('meeting-minutes browser recorder', () => {
       configurable: true,
       value: { getUserMedia: vi.fn(async () => { throw new Error('permission denied') }) },
     })
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -355,14 +403,14 @@ describe('meeting-minutes browser recorder', () => {
     const fetchMock = vi.fn((input: string, init?: RequestInit) => {
       if (input === API && init?.method === undefined) return Promise.resolve(json(HISTORY))
       if (input === `${API}/${MEETING_ID}`) return Promise.resolve(json(status))
-      if (input === `${API}/${MEETING_ID}/retry`) {
+      if (input === `${API}/${MEETING_ID}/retry?mode=restart`) {
         status = { ...COMPLETE, topic: '重新解析后的周会' }
         return Promise.resolve(json({ id: MEETING_ID, statusUrl: `/status/${MEETING_ID}` }, 202))
       }
       throw new Error(`unexpected request ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     const row = await screen.findByRole('button', { name: /^2026-08-19_09-15_项目周会_5m\.md/ })
@@ -397,7 +445,7 @@ describe('meeting-minutes browser recorder', () => {
         audioReady: true,
       }))
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('暂无历史录音')
@@ -440,7 +488,7 @@ describe('meeting-minutes browser recorder', () => {
       throw new Error(`unexpected request ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     const remove = await screen.findByRole('button', { name: '删除 2026-08-19_09-15_项目周会_5m.md' })
@@ -464,7 +512,7 @@ describe('meeting-minutes browser recorder', () => {
       return Promise.resolve(json({ error: 'a meeting being processed cannot be deleted' }, 409))
     })
     vi.stubGlobal('fetch', fetchMock)
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     fireEvent.click(await screen.findByRole('button', { name: '删除 2026-08-19_09-15_项目周会_5m.md' }))
@@ -476,10 +524,24 @@ describe('meeting-minutes browser recorder', () => {
 
   it('reports a history list that cannot be read', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: 'storage root is unreadable' }, 500)))
-    render(<MeetingMinutesButton {...props()} />)
+    render(<Tool />)
 
     fireEvent.click(screen.getByLabelText('会议纪要'))
     await screen.findByText('读取历史录音失败：storage root is unreadable')
     expect(screen.getByText('暂无历史录音')).toBeTruthy()
+  })
+})
+
+describe('meeting-minutes in the tool drawer', () => {
+  it('names the tool and says what it does', () => {
+    const setOpen = vi.fn()
+    render(<Tool surface="drawer" setOpen={setOpen} />)
+    expect(screen.getByText(zh['action.open'])).toBeTruthy()
+    expect(screen.getByText(zh['tool.description'])).toBeTruthy()
+    // The recorder dialog belongs to the bar surface, which outlives the panel.
+    expect(screen.queryByText(zh['dialog.description'])).toBeNull()
+
+    fireEvent.click(screen.getByText(zh['action.open']))
+    expect(setOpen).toHaveBeenCalledWith(true)
   })
 })

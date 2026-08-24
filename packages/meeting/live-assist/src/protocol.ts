@@ -34,6 +34,15 @@ export const LIVE_ASSIST_SOCKET_PATH = '/live-assist/socket'
 export const PCM_SAMPLE_RATE = 16_000
 
 /**
+ * Which of the two answer tracks one answer event belongs to.
+ *
+ * `fast` is the triage-and-answer request every run makes. `deep` is the second request against
+ * the configured deep route, made only for an utterance `fast` already decided to answer, and
+ * absent entirely from a run whose Host named no deep route.
+ */
+export type AnswerTrack = 'fast' | 'deep'
+
+/**
  * Why a detected utterance produced no answer.
  *
  * `not-a-question` is the model's own judgement; `too-short` and `empty-transcript`

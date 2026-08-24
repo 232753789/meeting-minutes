@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-面向实时会议辅助的可选 Web profile bundle。浏览器侧捕获一个共享浏览器标签页的音频，通过 loopback WebSocket 把 16 kHz PCM 流式送到 Host，并在对方转写旁边渲染流式生成的建议回答；Host 侧用 silero-vad 切分这段音频，把每个完整语句交给常驻内存的本地 Qwen3-ASR 模型转写，判断这句话是否需要作答，再通过 `ctx.llm` 流式生成回答。全过程不写任何文件。它不修改 `agent-loop`，也不改动已发布的 Web profile。
+面向实时会议辅助的可选 Web profile bundle。浏览器侧捕获一个共享浏览器标签页的音频，通过 loopback WebSocket 把 16 kHz PCM 流式送到 Host，并在对方转写下方渲染流式生成的建议回答；Host 侧用 silero-vad 切分这段音频，把每个完整语句交给常驻内存的本地 Qwen3-ASR 模型转写，判断这句话是否需要作答，再通过 `ctx.llm` 流式生成回答——配置了深度路由时，另有一个模型给出第二个详细回答。全过程不写任何文件。它不修改 `agent-loop`，也不改动已发布的 Web profile。
 
 ## 为什么只有对方进入转写
 
@@ -60,13 +60,15 @@ hf download Qwen/Qwen3-ASR-1.7B --local-dir "$HOME/.dsh/models/Qwen3-ASR-1.7B"
 
 ## 使用
 
-1. 打开输入框中的**面试助手**控件，粘贴你的背景资料——简历、目标岗位、想强调的项目。资料保存在浏览器存储中，且只发送到本机。
+1. 打开**面试助手**——它的耳机图标位于输入框的工具行中，旁边的工具抽屉会写出每个工具的名称——粘贴你的背景资料——简历、目标岗位、想强调的项目。资料保存在浏览器存储中，且只发送到本机。
 2. 点击**开始监听**。监听就在你当前打开的这个会话里进行，不会另开会话。要让面试单独占一个会话，请先新建会话再开始——并在其中发一条消息，理由见下。在浏览器的共享选择器里选择运行会议的**标签页**，并打开「分享标签页音频」。整场会议保持共享开启。
 3. 对话框关闭，输入框旁只留一行紧凑控制条：状态点、识别器当前状态、**暂停**、**结束**。其余空间全部留给会话。
 4. 会话里首先出现的是你这次填写的背景资料全文，随后会话被命名。这两件事完成后才开始监听。监听期间可以切换到别的会话，识别器不受影响；转写与回答始终落在开始时那个会话里。
 5. 对方每说完一句就作为一条消息出现，建议回答显示在它下面。视图跟随最新一轮滚动；向上滚动即停止跟随，与普通对话一致。
 
 每一句都会得到属于自己的回答。回答按听到问题的先后逐个生成，新问题绝不会取消正在生成的那一个——识别器按静音切分，句中停顿会让一句话提前结束，取消将丢弃真正问题的回答，只留下紧随其后的残句。代价是回答会排队：对方连问三件事，第三个回答要等前两个。
+
+**配置了深度路由时会有两个回答。** `deepProvider` 与 `deepModel` 指定第二个模型，对同一个问题给出深度回答。是否需要作答仍然只由快速路判定：深度请求要等快速路认定这句话值得作答之后才发出，因此一句寒暄不会在它上面产生任何开销。此后两者同时运行、各自独立流式——简短回答先到，标为「要点」；详细回答在它下方生长，标为「详细」，分节给出问题背后的技术机制、简历中对应的经历、方案在什么条件下不再成立，以及面试官最可能追问的问题。两条路各自排队，因此一个慢的详细回答绝不会拖住下一个问题的简短回答。两项都不填时，插件仍然只发它一直在发的那一个请求。
 
 本次监听所用的背景资料原样写进会话，作为它自己的一条消息。每个回答请求携带的正是这段文字，因此它不做截断也不做摘要：屏幕上看到的就是模型拿到的。
 
@@ -92,6 +94,8 @@ Qwen3-ASR 确实支持流式推理，但仅限 vLLM 后端，而 vLLM 在 macOS 
 
 从对方说完一句话到回答的第一个字出现，大约经过两秒到两秒半。调小 `vadMinSilenceMs` 可以缩短这段时间，代价是对方思考停顿时会被中途切断。识别器进程在语句之间保持常驻，因此模型加载成本只付一次；没有会话超过 `workerIdleShutdownMs` 后释放。
 
+配置深度路由不改变上面任何一项：它的请求在快速路决定作答后才发出，与之并行流式，因此屏幕上第一个回答到达的时间和以前一样；详细回答按它自己模型的节奏稍后落地。
+
 这张表只涵盖开始监听之后。启动本身另有一次开销：命名会话的那次请求会先跑完，由 `titleMaxOutputTokens` 限制，通常在一秒以内；第一句话还要额外承担识别器进程的模型加载时间。
 
 ## 浏览器支持
@@ -115,7 +119,12 @@ bundle 默认值在 [`cordis.patch.yml`](cordis.patch.yml)。profile 覆盖会�
     vadSpeechPadMs: 200
     minUtteranceMs: 400
     maxUtteranceMs: 20000
-    answerMaxOutputTokens: 800
+    deepProvider: deepseek-official
+    deepModel: deepseek-v4-pro
+    deepReasoningEffort: max
+    deepMaxOutputTokens: 4096
+    deepRequestTimeoutMs: 300000
+    answerMaxOutputTokens: 1600
     titleMaxOutputTokens: 64
     answerRequestTimeoutMs: 120000
     maxBackgroundBytes: 32768
@@ -125,11 +134,11 @@ bundle 默认值在 [`cordis.patch.yml`](cordis.patch.yml)。profile 覆盖会�
     workerIdleShutdownMs: 300000
 ```
 
-`localModelPath` 默认为 `$DSH_HOME/models/Qwen3-ASR-1.7B`。`vadThreshold` 是判定一个 512 采样窗口为语音的概率阈值。`minUtteranceMs` 度量的是不含 `vadSpeechPadMs` 补白的纯语音长度，因此一次短促的咳嗽会被丢弃而不是送去转写。`maxUtteranceMs` 会切断从不停顿的对方，使回答不至于被无限期拖住。`historyTurns` 是随请求一起作为上下文发送的历史问答条数，`noteTurns` 是你自己在会话中输入的、用来引导后续回答的最近消息条数。`titleMaxOutputTokens` 限制为会话命名的那一次请求。省略 `answerProvider` 和 `answerModel` 时使用当前默认 Agent 路由；两者同时提供则固定一条独立路由。
+`localModelPath` 默认为 `$DSH_HOME/models/Qwen3-ASR-1.7B`。`vadThreshold` 是判定一个 512 采样窗口为语音的概率阈值。`minUtteranceMs` 度量的是不含 `vadSpeechPadMs` 补白的纯语音长度，因此一次短促的咳嗽会被丢弃而不是送去转写。`maxUtteranceMs` 会切断从不停顿的对方，使回答不至于被无限期拖住。`historyTurns` 是随请求一起作为上下文发送的历史问答条数，`noteTurns` 是你自己在会话中输入的、用来引导后续回答的最近消息条数。`titleMaxOutputTokens` 限制为会话命名的那一次请求。省略 `answerProvider` 和 `answerModel` 时使用当前默认 Agent 路由；两者同时提供则固定一条独立路由。`deepProvider` 与 `deepModel` 开启第二个详细回答，同样必须成对提供；`deepReasoningEffort` 依赖这两项，`deepMaxOutputTokens` 与 `deepRequestTimeoutMs` 只约束这一个请求——推理模型需要这两项都给得宽裕。不填这一对，就永远不会发出深度请求。
 
 ## 存储了什么
 
-**面试内容会记录在会话日志中。** 每条转写和每条回答都是一个 session 事件（`live-assist/utterance`、`live-assist/answer-start`、`live-assist/answer-delta`、`live-assist/answer-end`、`live-assist/skipped`），因此这段问答能在刷新后留存、出现在会话列表中、事后可回看——这正是把它放进会话的意义。它写在部署的 session 持久化所在位置，默认是 `$DSH_HOME/sessions`。
+**面试内容会记录在会话日志中。** 每条转写和每条回答都是一个 session 事件（`live-assist/utterance`、`live-assist/answer-start`、`live-assist/answer-delta`、`live-assist/answer-end`、`live-assist/skipped`），三个 answer 事件都写明自己属于哪一条路，因此两个回答都能被完整重建，这段问答能在刷新后留存、出现在会话列表中、事后可回看——这正是把它放进会话的意义。它写在部署的 session 持久化所在位置，默认是 `$DSH_HOME/sessions`。
 
 音频不会被存储。它在内存中解码并以数组形式交给模型；任何录音都不会写盘。背景资料存放在浏览器自己的本地存储中，且只发送到本机。
 
@@ -158,15 +167,29 @@ python3 -m pytest packages/meeting/live-assist/python
 
 #### What the model sees
 
-识别器判定为完整的每一句发言对应一次请求。系统指令说明回答格式与开头的 `SKIP`／`ANSWER` 控制行；用户消息是一个 JSON 对象，携带面试者的背景资料、最近 `historyTurns` 条已回答的问题，以及转写出的这句发言。转写文本与背景资料都被框定为不可信数据，无法改变指令层级。面板、socket、识别器的任何信息都不会出现在请求中。
+识别器判定为完整的每一句发言对应一次请求。系统指令说明开头的 `SKIP`／`ANSWER` 控制行与回答格式：一句可以直接念出口的结论、3 到 5 条把结论落到简历中真实项目与目标岗位职责上的要点、以及一段以「延伸：」开头的指标、取舍或可能的追问；用户消息是一个 JSON 对象，携带面试者的背景资料、最近 `historyTurns` 条已回答的问题，以及转写出的这句发言。转写文本与背景资料都被框定为不可信数据，无法改变指令层级。判定默认作答：只有寒暄、单纯附和、面试官介绍公司或职位、以及听不清的残句才跳过；针对已答话题的追问一定作答，并且比上一轮更深入。面板、socket、识别器的任何信息都不会出现在请求中。
 
 #### Token effect
 
-每句发言是一次独立的辅助请求；一场会议大致产生与提问数相当的请求数。输出由 `answerMaxOutputTokens` 限制，被模型判为 `SKIP` 的发言在一个 token 后即停止。输入随背景资料增长（由 `maxBackgroundBytes` 限制）并随 `historyTurns` 增长。采集、切分与识别不产生 LLM token 开销。
+在这条路上，每句发言是一次独立的辅助请求；一场会议大致产生与提问数相当的请求数。输出由 `answerMaxOutputTokens` 限制，被模型判为 `SKIP` 的发言在一个 token 后即停止。输入随背景资料增长（由 `maxBackgroundBytes` 限制）并随 `historyTurns` 增长。采集、切分与识别不产生 LLM token 开销。
 
 #### KV Cache effect
 
 回答请求既独立于 Agent 对话，彼此之间也相互独立。系统指令在整个会话中完全相同，可能被 provider 缓存，但用户消息随每句发言和每次追加的历史轮次而变化，因此可缓存前缀到此为止。provider 的缓存可用性与淘汰策略不在本包范围内。
+
+### 针对同一句发言的详细回答
+
+#### What the model sees
+
+一次发往所配置深度路由的请求，只针对快速路已经判定要作答的发言发出；未配置 `deepProvider` 与 `deepModel` 时根本不会发出。系统指令说明判定已经完成、无需输出任何控制行，并要求分五节作答：直接回答、问题背后的技术机制、简历中对应经历按情境-任务-行动-结果展开、方案在什么条件下不再成立以及代价是什么、面试官最可能追问的两到三个问题。用户消息与快速路那次请求完全相同——背景资料、提问当时的历史问答、面试者输入的补充说明，以及这句发言——转写文本与背景资料在这里同样被框定为不可信数据。两条路都看不到对方的回答。
+
+#### Token effect
+
+配置深度路由会让一场面试的请求数大致翻倍，输出 token 则不止翻倍：`deepMaxOutputTokens` 默认 4096，而 `answerMaxOutputTokens` 是 1600，推理模型还要在此之上计费它的思考过程。输入是快速路输入的再来一遍，因此每个被作答的问题都要为背景资料和 `historyTurns` 付两次费用。被判为 `SKIP` 的发言在这里不产生任何开销，因为根本不会为它发出深度请求。
+
+#### KV Cache effect
+
+深度请求既独立于快速请求与 Agent 对话，彼此之间也相互独立。系统指令在整个会话中完全相同，可能被 provider 缓存，但用户消息随每句发言而变化，因此可缓存前缀到此为止，与快速路一致。
 
 ## Known Limitations and Deferred Work
 
@@ -177,5 +200,6 @@ python3 -m pytest packages/meeting/live-assist/python
 - 携带本插件事件的会话无法被未安装该插件的构建重建，详见上文「存储了什么」。`Session.append` 没有提供把事件标记为可忽略的途径，因此这不是插件当前能规避的。
 - 回答流按 delta 逐条写入日志，与 `assistant/chunk` 一致。因此一场长面试的日志会以回答片段为主体。
 - 回答是串行的，因此连续提问会让靠后的回答变慢。被识别器从句中切开的语句不会被合并，尾部残句会作为独立问题得到回答；调大 `vadMinSilenceMs` 是缓解这一点的粗糙办法。
+- 配置深度路由会让一场面试的模型请求数翻倍，而且它的回答在自己的一条路上排队：连续三个问题会让第三个详细回答姗姗来迟，尽管它的简短回答按时到达。
 - 命名需要 `sessionTitle` 服务。没有它时会话保留默认名称，也不会发出标题请求。
 - 本插件追加的任何事件都不会清除会话的 blank 位，而那个位仅由 `turn/start` 推导。记录在空白会话里的面试因此不进入会话列表，还会被下一次「新建会话」复用；对话框会给出提示，但真正的修复属于超出本 bundle 的会话词汇表改动。

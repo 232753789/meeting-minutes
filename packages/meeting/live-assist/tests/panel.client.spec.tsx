@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { act, cleanup, fireEvent, getDefaultNormalizer, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -51,20 +51,40 @@ function stub(state: Partial<ControllerState>) {
   }
 }
 
-function renderButton(overrides: {
+/** The drawer's half of the tool contract: it, not the entry, holds the open flag. */
+function seat(overrides: {
   state?: Partial<ControllerState>
   sessionId?: SessionId
   blank?: boolean
+  surface?: 'bar' | 'drawer'
+  setOpen?: (open: boolean) => void
 } = {}) {
   const { controller, mocks } = stub(overrides.state ?? {})
-  const props = {
-    t,
-    sessionId: overrides.sessionId ?? ('session-a' as SessionId),
-    controller,
-    isBlankSession: () => overrides.blank ?? false,
-  } as unknown as ComponentProps<typeof LiveAssistButton>
-  render(<LiveAssistButton {...props} />)
+  function Host() {
+    const [open, setOpen] = useState(false)
+    const props = {
+      t,
+      sessionId: overrides.sessionId ?? ('session-a' as SessionId),
+      surface: overrides.surface ?? 'bar',
+      open,
+      setOpen: overrides.setOpen ?? setOpen,
+      controller,
+      isBlankSession: () => overrides.blank ?? false,
+    } as unknown as ComponentProps<typeof LiveAssistButton>
+    return <LiveAssistButton {...props} />
+  }
+  return { controller, mocks, Host }
+}
+
+function renderButton(overrides: Parameters<typeof seat>[0] = {}) {
+  const { controller, mocks, Host } = seat(overrides)
+  render(<Host />)
   return { controller, mocks }
+}
+
+/** Click the tool row's icon, which is what the drawer leaves visible when closed. */
+function openDialog(): void {
+  fireEvent.click(screen.getByLabelText(zh['action.open']))
 }
 
 beforeEach(() => {
@@ -88,7 +108,7 @@ describe('statusKey', () => {
 describe('LiveAssistButton before listening', () => {
   it('opens a setup dialog explaining where the interview lands', () => {
     renderButton()
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText(zh['hint.newSession'])).toBeTruthy()
     expect(screen.getByText(zh['hint.screenShare'])).toBeTruthy()
     expect(screen.getByRole('textbox')).toBeTruthy()
@@ -98,13 +118,13 @@ describe('LiveAssistButton before listening', () => {
 
   it('warns that a blank session will not stay in the list', () => {
     renderButton({ blank: true })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText(zh['hint.blankSession'])).toBeTruthy()
   })
 
   it('listens in the session it is already in, opening no other', async () => {
     const { mocks } = renderButton({ sessionId: 'session-a' as SessionId })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '五年 Go' } })
     fireEvent.click(screen.getByText(zh['action.start']))
 
@@ -118,7 +138,7 @@ describe('LiveAssistButton before listening', () => {
   it('reports a refused share and starts nothing', async () => {
     shareProbe.failWith = new Error('用户取消了共享')
     const { mocks } = renderButton()
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     fireEvent.click(screen.getByText(zh['action.start']))
     await waitFor(() => { expect(screen.getByText(/用户取消了共享/)).toBeTruthy() })
     expect(mocks.start).not.toHaveBeenCalled()
@@ -129,7 +149,7 @@ describe('LiveAssistButton before listening', () => {
   it('stringifies a non-Error share refusal', async () => {
     shareProbe.failWith = '系统策略阻止了屏幕共享'
     renderButton()
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     fireEvent.click(screen.getByText(zh['action.start']))
     await waitFor(() => { expect(screen.getByText(/系统策略阻止了屏幕共享/)).toBeTruthy() })
   })
@@ -137,27 +157,50 @@ describe('LiveAssistButton before listening', () => {
   it('reports a share that carried no audio', async () => {
     shareProbe.failWith = new MissingSystemAudioError()
     renderButton()
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     fireEvent.click(screen.getByText(zh['action.start']))
     await waitFor(() => { expect(screen.getByText(zh['error.missingAudio'])).toBeTruthy() })
   })
 
   it('renders a capture failure the controller reported', () => {
     renderButton({ state: { failure: { key: 'missingAudio', message: '' } } })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText(zh['error.missingAudio'])).toBeTruthy()
   })
 
   it('renders a socket failure with its detail', () => {
     renderButton({ state: { failure: { key: 'socket', message: '连接被拒' } } })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText(/连接被拒/)).toBeTruthy()
   })
 
   it('renders a Host error', () => {
     renderButton({ state: { error: '识别器不可用' } })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText('识别器不可用')).toBeTruthy()
+  })
+})
+
+describe('LiveAssistButton in the tool drawer', () => {
+  it('names the tool and says what it does', () => {
+    const setOpen = vi.fn()
+    renderButton({ surface: 'drawer', setOpen })
+    expect(screen.getByText(zh['action.open'])).toBeTruthy()
+    expect(screen.getByText(zh['tool.description'])).toBeTruthy()
+    // The setup dialog belongs to the bar surface, which outlives the panel.
+    expect(screen.queryByText(zh['dialog.title'])).toBeNull()
+
+    fireEvent.click(screen.getByText(zh['action.open']))
+    expect(setOpen).toHaveBeenCalledWith(true)
+  })
+
+  it('reports the run in place of an action while listening', () => {
+    const setOpen = vi.fn()
+    renderButton({ surface: 'drawer', setOpen, state: { running: true, connected: true } })
+    expect(screen.getByText(zh['state.listening'])).toBeTruthy()
+    fireEvent.click(screen.getByText(zh['action.open']))
+    // Pause and stop live on the bar surface; the row must not reopen setup over a live run.
+    expect(setOpen).not.toHaveBeenCalled()
   })
 })
 
@@ -168,7 +211,7 @@ describe('LiveAssistButton while listening', () => {
     expect(screen.getByText(zh['action.pause'])).toBeTruthy()
     expect(screen.getByText(zh['action.stop'])).toBeTruthy()
     // The setup surface is gone entirely while a recognizer runs.
-    expect(screen.queryByText(zh['action.open'])).toBeNull()
+    expect(screen.queryByLabelText(zh['action.open'])).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
@@ -189,7 +232,13 @@ describe('LiveAssistButton while listening', () => {
   it('re-renders when the controller reports the counterpart speaking', () => {
     const { controller, set } = stub({ running: true, connected: true })
     const props = {
-      t, sessionId: 'session-b' as SessionId, controller, isBlankSession: () => false,
+      t,
+      sessionId: 'session-b' as SessionId,
+      surface: 'bar',
+      open: false,
+      setOpen: () => {},
+      controller,
+      isBlankSession: () => false,
     } as unknown as ComponentProps<typeof LiveAssistButton>
     render(<LiveAssistButton {...props} />)
     expect(screen.getByText(zh['state.listening'])).toBeTruthy()
@@ -202,7 +251,13 @@ describe('LiveAssistButton across a session switch', () => {
   it('keeps rendering the running bar after remounting in another session', () => {
     const { controller, mocks } = stub({ running: true, connected: true })
     const props = {
-      t, sessionId: 'session-b' as SessionId, controller, isBlankSession: () => false,
+      t,
+      sessionId: 'session-b' as SessionId,
+      surface: 'bar',
+      open: false,
+      setOpen: () => {},
+      controller,
+      isBlankSession: () => false,
     } as unknown as ComponentProps<typeof LiveAssistButton>
     render(<LiveAssistButton {...props} />)
     // The run lives in the controller, so a remount neither restarts nor drops it.
@@ -238,25 +293,66 @@ describe('ExchangeCard', () => {
     render(<ExchangeCard {...props} />)
   }
 
+  const PENDING = { text: '', status: 'pending' }
+
   it('shows the question with how much speech it came from', () => {
-    renderCard({ question: '讲讲你的项目', seconds: 2.54, answer: '', status: 'pending' })
+    renderCard({ question: '讲讲你的项目', seconds: 2.54, fast: PENDING })
     expect(screen.getByText('讲讲你的项目')).toBeTruthy()
     expect(screen.getByText(t('exchange.heard', { seconds: '2.5' }))).toBeTruthy()
   })
 
   it('shows a thinking placeholder until the first delta', () => {
-    renderCard({ question: '你好', seconds: 1, answer: '', status: 'streaming' })
+    renderCard({ question: '你好', seconds: 1, fast: { text: '', status: 'streaming' } })
     expect(screen.getByText(zh['state.thinking'])).toBeTruthy()
   })
 
   it('shows the answer once it has text', () => {
-    renderCard({ question: '你会 Rust 吗', seconds: 1, answer: '会，写过两年。', status: 'done' })
+    renderCard({ question: '你会 Rust 吗', seconds: 1, fast: { text: '会，写过两年。', status: 'done' } })
     expect(screen.getByText('会，写过两年。')).toBeTruthy()
   })
 
+  it('labels neither track when the Host runs the fast one alone', () => {
+    renderCard({ question: '你会 Rust 吗', seconds: 1, fast: { text: '会。', status: 'done' } })
+    expect(screen.queryByText(zh['answer.fast'])).toBeNull()
+    expect(screen.queryByText(zh['answer.deep'])).toBeNull()
+  })
+
+  it('stacks the detailed answer under the short one, each labelled', () => {
+    renderCard({
+      question: '你会 Rust 吗',
+      seconds: 1,
+      fast: { text: '会，写过两年。', status: 'done' },
+      deep: { text: '直接回答：会。', status: 'streaming' },
+    })
+    expect(screen.getByText(zh['answer.fast'])).toBeTruthy()
+    expect(screen.getByText(zh['answer.deep'])).toBeTruthy()
+    expect(screen.getByText('会，写过两年。')).toBeTruthy()
+    expect(screen.getByText('直接回答：会。')).toBeTruthy()
+  })
+
+  it('shows its own placeholder while the detailed answer is still being written', () => {
+    renderCard({
+      question: '你会 Rust 吗',
+      seconds: 1,
+      fast: { text: '会，写过两年。', status: 'done' },
+      deep: PENDING,
+    })
+    expect(screen.getByText(zh['state.thinkingDeep'])).toBeTruthy()
+  })
+
   it('marks an utterance that needed no answer', () => {
-    renderCard({ question: '嗯好的', seconds: 1, answer: '', status: 'skipped', reason: 'not-a-question' })
+    renderCard({ question: '嗯好的', seconds: 1, fast: PENDING, skipped: 'not-a-question' })
     expect(screen.getByText(zh['answer.skipped'])).toBeTruthy()
+  })
+
+  it('shows no answer at all for a skipped utterance', () => {
+    renderCard({
+      question: '嗯好的',
+      seconds: 1,
+      fast: { text: '不该出现', status: 'done' },
+      skipped: 'not-a-question',
+    })
+    expect(screen.queryByText('不该出现')).toBeNull()
   })
 })
 
@@ -266,7 +362,7 @@ describe('LiveAssistButton storage and dismissal', () => {
       .mockImplementation(() => { throw new Error('storage denied') })
     try {
       renderButton()
-      fireEvent.click(screen.getByText(zh['action.open']))
+      openDialog()
       expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe('')
     } finally {
       getItem.mockRestore()
@@ -278,7 +374,7 @@ describe('LiveAssistButton storage and dismissal', () => {
       .mockImplementation(() => { throw new Error('storage full') })
     try {
       const { mocks } = renderButton()
-      fireEvent.click(screen.getByText(zh['action.open']))
+      openDialog()
       fireEvent.click(screen.getByText(zh['action.start']))
       await waitFor(() => { expect(mocks.start).toHaveBeenCalled() })
     } finally {
@@ -288,13 +384,13 @@ describe('LiveAssistButton storage and dismissal', () => {
 
   it('renders a share failure with its detail', () => {
     renderButton({ state: { failure: { key: 'share', message: '用户取消' } } })
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     expect(screen.getByText(/用户取消/)).toBeTruthy()
   })
 
   it('closes the dialog without starting', () => {
     const { mocks } = renderButton()
-    fireEvent.click(screen.getByText(zh['action.open']))
+    openDialog()
     fireEvent.click(screen.getByLabelText(zh['action.close']))
     expect(screen.queryByText(zh['dialog.title'])).toBeNull()
     expect(mocks.start).not.toHaveBeenCalled()

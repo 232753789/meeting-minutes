@@ -45,7 +45,7 @@ describe('live-assist client plugin', () => {
     expect(registrations).toEqual([
       expect.objectContaining({ name: 'conversation.chat.node', key: 'live-assist-background' }),
       expect.objectContaining({ name: 'conversation.chat.node', key: 'live-assist-exchange' }),
-      expect.objectContaining({ name: 'conversation.input.left', id: 'live-assist' }),
+      expect.objectContaining({ name: 'conversation.input.tool', id: 'live-assist' }),
     ])
   })
 
@@ -54,7 +54,7 @@ describe('live-assist client plugin', () => {
     apply(ctx)
     const composer = register.mock.calls
       .map(call => call[0] as { name: string; inject?: () => unknown })
-      .find(spec => spec.name === 'conversation.input.left')
+      .find(spec => spec.name === 'conversation.input.tool')
     const injected = composer?.inject?.() as {
       controller: unknown
       isBlankSession: (session: string) => boolean

@@ -280,4 +280,29 @@ describe('meeting HTTP intake', () => {
     expect(retry).toHaveBeenCalledTimes(3)
     await controller.dispose()
   })
+
+  it('resumes by default, restarts on request, and refuses any other mode', async () => {
+    const config = resolveConfig({ asrMode: 'remote', storageRoot: './unused' })
+    const retry = vi.fn<MeetingMinutesRuntime['retry']>().mockResolvedValue({ kind: 'accepted' })
+    const runtime = { config, retry } as unknown as MeetingMinutesRuntime
+    const controller = new MeetingHttpController(runtime)
+    const server = createServer((req, res) => { void controller.handle(req, res) })
+    servers.push(server)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as AddressInfo).port
+    const origin = `http://127.0.0.1:${String(port)}`
+    const id = 'meeting-20260819T091500-012345abcdef'
+    const path = `${origin}/meeting-minutes/api/meetings/${id}/retry`
+
+    expect((await fetch(path, { method: 'POST', headers: { origin } })).status).toBe(202)
+    expect((await fetch(`${path}?mode=resume`, { method: 'POST', headers: { origin } })).status).toBe(202)
+    expect((await fetch(`${path}?mode=restart`, { method: 'POST', headers: { origin } })).status).toBe(202)
+    expect(retry.mock.calls.map(call => call[1])).toEqual(['resume', 'resume', 'restart'])
+
+    const rejected = await fetch(`${path}?mode=partial`, { method: 'POST', headers: { origin } })
+    expect(rejected.status).toBe(400)
+    await expect(rejected.json()).resolves.toEqual({ error: 'mode must be resume or restart' })
+    expect(retry).toHaveBeenCalledTimes(3)
+    await controller.dispose()
+  })
 })

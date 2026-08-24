@@ -171,12 +171,28 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * The left end of the tool row INSIDE the composer card, after the
      * resident chrome (access mode, plan, attach) — the seat for a small
-     * always-visible control. Entries sit beside that chrome, never replace
-     * it. Same {@link InputZone} owner share; use `.right` for a control that
-     * belongs next to the send button, and the docks for anything taller than
-     * one row.
+     * always-visible control that carries its own affordance. Entries sit
+     * beside that chrome, never replace it. Same {@link InputZone} owner
+     * share; use `.right` for a control that belongs next to the send button,
+     * `conversation.input.tool` for a feature the user opens from the tool
+     * drawer, and the docks for anything taller than one row.
      */
     'conversation.input.left': { kind: 'list'; scope: 'session'; owner: InputZone }
+    /**
+     * One feature in the composer's tool drawer (meeting minutes, live
+     * interview assist). Entries render TWICE per session — once per
+     * {@link ComposerToolSeat} `surface` — so one registration covers both the
+     * icon in the tool row and the labelled row users read inside the drawer;
+     * branch on `surface` and render nothing a seat has no face for. The
+     * drawer owns the per-entry open flag, so the icon and the drawer row
+     * open the same dialog: render that dialog from the `bar` surface (the
+     * `drawer` surface unmounts when the drawer closes) and honour `open` /
+     * `setOpen` instead of holding the flag yourself. A running tool keeps
+     * its status and controls on the `bar` surface, where they stay visible
+     * with the drawer closed. The whole drawer renders nothing while no entry
+     * is registered.
+     */
+    'conversation.input.tool': { kind: 'list'; scope: 'session'; owner: ComposerToolSeat }
     /**
      * The right end of the same tool row, before the primary send button —
      * the seat for a control the user reaches on the way to sending (the
@@ -274,6 +290,24 @@ export interface ConversationHeaderActionOwnerProps {}
 export interface InputZone {
   readonly session: ConversationSnapshot
   readonly input: InputState
+}
+
+/**
+ * Owner share of one composer tool-drawer entry: the input-region currency
+ * plus which face this occurrence renders and the drawer-held open flag for
+ * this entry alone.
+ */
+export interface ComposerToolSeat extends InputZone {
+  /**
+   * `bar`: the tool row's compact face — an icon button, the running tool's
+   * status and controls, and the entry's own dialog. `drawer`: one row inside
+   * the open drawer — icon, name, and a sentence saying what the tool does.
+   */
+  readonly surface: 'bar' | 'drawer'
+  /** Whether the drawer currently holds this entry open. */
+  readonly open: boolean
+  /** Open or close this entry; opening one closes the drawer. */
+  readonly setOpen: (open: boolean) => void
 }
 
 /**
@@ -422,6 +456,16 @@ export interface ConversationInjected {
    * the root renders as the inert composer's placeholder.
    */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  /**
+   * The `conversation.input.tool` ledger as entry ids in list order: the
+   * drawer renders one occurrence per id, so each entry receives its own
+   * open flag.
+   */
+  tools: {
+    list: () => readonly string[]
+    subscribe: (fn: () => void) => () => void
+    version: () => number
+  }
 }
 
 /** Business callbacks injected into the strict Session body seat. */
@@ -481,6 +525,8 @@ export interface ComposerBarOwnerProps {
   accessory?: ReactNode
   /** Floating overlay anchor content (menu / popup shell entries), rendered inside the card. */
   overlay?: ReactNode
+  /** The composer tool drawer (tool row, between the resident chrome and `leftItems`). */
+  toolDrawer?: ReactNode
   /** input.left slot entries (tool row, beside the resident chrome). */
   leftItems?: ReactNode
   /** input.right slot entries (tool row, before the primary button). */
@@ -573,6 +619,7 @@ export type ConversationSlotProps =
     | 'conversation.input.overlay'
     | 'conversation.input.dock' | 'conversation.composer.dock'
     | 'conversation.input.left' | 'conversation.input.right'
+    | 'conversation.input.tool'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
   >

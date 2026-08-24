@@ -38,28 +38,54 @@ describe('exchangeDefinition', () => {
     expect(exchangeDefinition.match(event('turn/start', { turn: 1 }))).toBeNull()
   })
 
-  it('opens the exchange with the transcript and no answer yet', () => {
-    expect(fold([])).toEqual({ question: '讲讲你的项目', seconds: 2.5, answer: '', status: 'pending' })
+  it('opens the exchange with the transcript and neither track answered', () => {
+    expect(fold([])).toEqual({
+      question: '讲讲你的项目',
+      seconds: 2.5,
+      fast: { text: '', status: 'pending' },
+    })
   })
 
   it('refuses to start on anything but an utterance', () => {
-    expect(() => exchangeDefinition.start({} as never, match('live-assist/answer-start', { id: first }), {} as never))
+    expect(() => exchangeDefinition.start({} as never, match('live-assist/answer-start', { id: first, track: 'fast' }), {} as never))
       .toThrow(/requires live-assist\/utterance/)
   })
 
   it('accumulates deltas in order and settles on answer-end', () => {
     const state = fold([
-      { type: 'live-assist/answer-start', data: { id: first } },
-      { type: 'live-assist/answer-delta', data: { id: first, text: '做过' } },
-      { type: 'live-assist/answer-delta', data: { id: first, text: '三年调度。' } },
-      { type: 'live-assist/answer-end', data: { id: first } },
+      { type: 'live-assist/answer-start', data: { id: first, track: 'fast' } },
+      { type: 'live-assist/answer-delta', data: { id: first, track: 'fast', text: '做过' } },
+      { type: 'live-assist/answer-delta', data: { id: first, track: 'fast', text: '三年调度。' } },
+      { type: 'live-assist/answer-end', data: { id: first, track: 'fast' } },
     ])
-    expect(state).toMatchObject({ answer: '做过三年调度。', status: 'done' })
+    expect(state).toMatchObject({ fast: { text: '做过三年调度。', status: 'done' } })
   })
 
-  it('records a skip with its reason', () => {
+  it('grows the deep track only once the Host starts it', () => {
+    expect(fold([])).not.toHaveProperty('deep')
+    const state = fold([{ type: 'live-assist/answer-start', data: { id: first, track: 'deep' } }])
+    expect(state.deep).toEqual({ text: '', status: 'pending' })
+  })
+
+  it('keeps the two tracks apart', () => {
+    const state = fold([
+      { type: 'live-assist/answer-start', data: { id: first, track: 'fast' } },
+      { type: 'live-assist/answer-delta', data: { id: first, track: 'fast', text: '会，写过两年。' } },
+      { type: 'live-assist/answer-start', data: { id: first, track: 'deep' } },
+      { type: 'live-assist/answer-delta', data: { id: first, track: 'deep', text: '直接回答：' } },
+      { type: 'live-assist/answer-end', data: { id: first, track: 'fast' } },
+      { type: 'live-assist/answer-delta', data: { id: first, track: 'deep', text: '会。原理：…' } },
+      { type: 'live-assist/answer-end', data: { id: first, track: 'deep' } },
+    ])
+    expect(state).toMatchObject({
+      fast: { text: '会，写过两年。', status: 'done' },
+      deep: { text: '直接回答：会。原理：…', status: 'done' },
+    })
+  })
+
+  it('records a skip with its reason, leaving both tracks unanswered', () => {
     const state = fold([{ type: 'live-assist/skipped', data: { id: first, reason: 'not-a-question' } }])
-    expect(state).toMatchObject({ status: 'skipped', reason: 'not-a-question' })
+    expect(state).toMatchObject({ skipped: 'not-a-question', fast: { text: '', status: 'pending' } })
   })
 
   it('keeps the state unchanged for an unrelated update', () => {

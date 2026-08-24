@@ -373,7 +373,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer.bar\', () => ctx.slots.register(\n      { name: \'conversation.composer.bar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:201',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:217',
   },
   {
     key: 'conversation.composer.dock',
@@ -599,8 +599,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'conversation.input.left',
     kind: 'list',
     scope: 'session',
-    summary: 'The left end of the tool row INSIDE the composer card, after the resident chrome (access mode, plan, attach) — the seat for a small always-visible control.',
-    doc: 'The left end of the tool row INSIDE the composer card, after the\nresident chrome (access mode, plan, attach) — the seat for a small\nalways-visible control. Entries sit beside that chrome, never replace\nit. Same InputZone owner share; use `.right` for a control that\nbelongs next to the send button, and the docks for anything taller than\none row.',
+    summary: 'The left end of the tool row INSIDE the composer card, after the resident chrome (access mode, plan, attach) — the seat for a small always-visible control that carries its own affordance.',
+    doc: 'The left end of the tool row INSIDE the composer card, after the\nresident chrome (access mode, plan, attach) — the seat for a small\nalways-visible control that carries its own affordance. Entries sit\nbeside that chrome, never replace it. Same InputZone owner\nshare; use `.right` for a control that belongs next to the send button,\n`conversation.input.tool` for a feature the user opens from the tool\ndrawer, and the docks for anything taller than one row.',
     registerOptions: [
       {
         name: 'id',
@@ -641,13 +641,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
-    occupants: [
-      'live-assist LiveAssistButton id \'live-assist\'',
-      'meeting-minutes MeetingMinutesButton id \'meeting-minutes\'',
-    ],
+    occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.left\', () => ctx.slots.register(\n      { name: \'conversation.input.left\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:179',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:180',
   },
   {
     key: 'conversation.input.model',
@@ -678,7 +675,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.model\', () => ctx.slots.register(\n      { name: \'conversation.input.model\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:221',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:237',
   },
   {
     key: 'conversation.input.overlay',
@@ -758,7 +755,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.plan\', () => ctx.slots.register(\n      { name: \'conversation.input.plan\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:211',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:227',
   },
   {
     key: 'conversation.input.right',
@@ -809,7 +806,60 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.right\', () => ctx.slots.register(\n      { name: \'conversation.input.right\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:187',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:203',
+  },
+  {
+    key: 'conversation.input.tool',
+    kind: 'list',
+    scope: 'session',
+    summary: 'One feature in the composer\'s tool drawer (meeting minutes, live interview assist).',
+    doc: 'One feature in the composer\'s tool drawer (meeting minutes, live\ninterview assist). Entries render TWICE per session — once per\nComposerToolSeat `surface` — so one registration covers both the\nicon in the tool row and the labelled row users read inside the drawer;\nbranch on `surface` and render nothing a seat has no face for. The\ndrawer owns the per-entry open flag, so the icon and the drawer row\nopen the same dialog: render that dialog from the `bar` surface (the\n`drawer` surface unmounts when the drawer closes) and honour `open` /\n`setOpen` instead of holding the flag yourself. A running tool keeps\nits status and controls on the `bar` surface, where they stay visible\nwith the drawer closed. The whole drawer renders nothing while no entry\nis registered.',
+    registerOptions: [
+      {
+        name: 'id',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
+      },
+    ],
+    ownerProps: [
+      '/**\n * Owner share of one composer tool-drawer entry: the input-region currency\n * plus which face this occurrence renders and the drawer-held open flag for\n * this entry alone.\n */\nexport interface ComposerToolSeat extends InputZone {\n  /**\n   * `bar`: the tool row\'s compact face — an icon button, the running tool\'s\n   * status and controls, and the entry\'s own dialog. `drawer`: one row inside\n   * the open drawer — icon, name, and a sentence saying what the tool does.\n   */\n  readonly surface: \'bar\' | \'drawer\'\n  /** Whether the drawer currently holds this entry open. */\n  readonly open: boolean\n  /** Open or close this entry; opening one closes the drawer. */\n  readonly setOpen: (open: boolean) => void\n}',
+    ],
+    ownerPropsReferences: [
+      'InputZone',
+    ],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
+    occupants: [
+      'live-assist LiveAssistButton id \'live-assist\'',
+      'meeting-minutes MeetingMinutesButton id \'meeting-minutes\'',
+    ],
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.tool\', () => ctx.slots.register(\n      { name: \'conversation.input.tool\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:195',
   },
   {
     key: 'conversation.session',

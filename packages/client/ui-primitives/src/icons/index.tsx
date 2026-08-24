@@ -870,3 +870,31 @@ export const IconArchiveOutline20 = ({ size = 20, className }: IconProps) => (
     <path d="M12.7962 12.5661V11.0832H7.20548V12.5661L12.7962 12.5661Z" fill="currentColor" />
   </svg>
 )
+
+/** Microphone with its cradle (meeting-minutes tool-row glyph). */
+export const IconMicrophoneOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="5.85" y="1.65" width="4.3" height="8" rx="2.15" stroke="currentColor" strokeWidth="1.3" />
+    <path
+      d="M3.6 7.4V8A4.4 4.4 0 0 0 12.4 8V7.4"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+    <path d="M8 12.4V14.35" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+  </svg>
+)
+
+/** Headset: band over two ear cups (live-assist tool-row glyph). */
+export const IconHeadsetOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M2.75 10.25V8A5.25 5.25 0 0 1 13.25 8V10.25"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+    <rect x="1.4" y="9.15" width="3" height="4.45" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="11.6" y="9.15" width="3" height="4.45" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+  </svg>
+)
