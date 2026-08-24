@@ -6,11 +6,20 @@ import type { Context } from '@deepseek-ai/cordis'
 import ffmpegPath from 'ffmpeg-static'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type { ResolvedConfig } from './config.ts'
+import type { SpeakerInterval } from './speaker.ts'
 import { meetingDirectory, NORMALIZED_AUDIO_FILENAME } from './storage.ts'
-import type { MeetingRecord } from './types.ts'
+import type { MeetingRecord, SpeakerId } from './types.ts'
 
 const PROCESS_GRACE_MS = 5_000
 const DIAGNOSTIC_BYTES = 512 * 1024
+
+/** One audio file sent to ASR, with its position and optional diarization label. */
+export interface AsrChunk {
+  readonly path: string
+  readonly startSeconds: number
+  readonly endSeconds: number
+  readonly speaker?: SpeakerId
+}
 
 async function runFfmpeg(
   ctx: Context,
@@ -97,7 +106,7 @@ export async function normalizeAndChunk(
   config: ResolvedConfig,
   record: MeetingRecord,
   signal: AbortSignal,
-): Promise<{ audioFilename: string; chunkDirectory: string; chunks: string[] }> {
+): Promise<{ audioFilename: string; chunkDirectory: string; chunks: AsrChunk[] }> {
   const directory = meetingDirectory(config, record.id)
   const executable = await resolveFfmpegExecutable(ctx, config)
   const transcode = !isMp4Recording(record) && !await transcodedAlready(config, record)
@@ -140,9 +149,70 @@ export async function normalizeAndChunk(
     const chunks = (await readdir(chunkDirectory))
       .filter(filename => /^chunk-[0-9]{5}\.wav$/.test(filename))
       .sort()
-      .map(filename => join(chunkDirectory, filename))
+      .map((filename, index) => ({
+        path: join(chunkDirectory, filename),
+        startSeconds: index * config.asrChunkSeconds,
+        endSeconds: (index + 1) * config.asrChunkSeconds,
+      }))
     if (chunks.length === 0) throw new Error('meeting-minutes: FFmpeg produced no ASR chunks')
     return { audioFilename, chunkDirectory, chunks }
+  } catch (error) {
+    await rm(chunkDirectory, { recursive: true, force: true })
+    throw error
+  }
+}
+
+/**
+ * Replace fixed chunks with one mono WAV per diarized speaker interval.
+ * @param ctx - context carrying the subprocess provider.
+ * @param config - resolved FFmpeg configuration.
+ * @param record - meeting owning the temporary chunk directory.
+ * @param audioFilename - normalized playback filename.
+ * @param intervals - ordered speaker intervals from the diarization provider.
+ * @param signal - cancellation for FFmpeg process trees.
+ * @returns ASR chunks ordered by start time.
+ */
+export async function splitDiarizedAudio(
+  ctx: Context,
+  config: ResolvedConfig,
+  record: MeetingRecord,
+  audioFilename: string,
+  intervals: readonly SpeakerInterval[],
+  signal: AbortSignal,
+): Promise<{ chunkDirectory: string; chunks: AsrChunk[] }> {
+  const directory = meetingDirectory(config, record.id)
+  const executable = await resolveFfmpegExecutable(ctx, config)
+  const chunkDirectory = join(directory, '.wav-chunks')
+  await rm(chunkDirectory, { recursive: true, force: true })
+  await mkdir(chunkDirectory, { mode: 0o700 })
+  try {
+    const chunks: AsrChunk[] = []
+    for (const [index, interval] of intervals.entries()) {
+      const filename = `speaker-${String(index).padStart(5, '0')}.wav`
+      const path = join(chunkDirectory, filename)
+      await runFfmpeg(ctx, executable, directory, [
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-y',
+        '-ss', String(interval.startSeconds),
+        '-t', String(interval.endSeconds - interval.startSeconds),
+        '-i', audioFilename,
+        '-map', '0:a:0',
+        '-vn',
+        '-ac', '1',
+        '-ar', '16000',
+        '-c:a', 'pcm_s16le',
+        path,
+      ], signal)
+      chunks.push({
+        path,
+        startSeconds: interval.startSeconds,
+        endSeconds: interval.endSeconds,
+        speaker: interval.speaker,
+      })
+    }
+    if (chunks.length === 0) throw new Error('meeting-minutes: diarization produced no speech intervals')
+    return { chunkDirectory, chunks }
   } catch (error) {
     await rm(chunkDirectory, { recursive: true, force: true })
     throw error

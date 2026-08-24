@@ -24,6 +24,7 @@ export type {
   MeetingListEntry,
   MeetingStage,
   MeetingStatus,
+  SpeakerId,
   TranscriptSegment,
 } from './types.ts'
 

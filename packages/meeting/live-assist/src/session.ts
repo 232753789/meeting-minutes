@@ -7,6 +7,7 @@ import { generateAnswer, generateDeepAnswer, type AnswerRequest, type QaTurn } f
 import { generateTitle } from './title.ts'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from './events.ts'
+import { QuestionAccumulator } from './question-segmentation.ts'
 import { UtteranceId, type LiveSessionId, type ServerMessage } from './protocol.ts'
 import type { LiveAsrWorker, WorkerEvent } from './worker.ts'
 
@@ -53,11 +54,10 @@ export type Sender = (message: ServerMessage) => void
  * ordinary session path and they survive a reload. The socket carries only live status the log
  * has no reason to keep.
  *
- * Every utterance gets its own answer. They are generated one at a time, in the order they were
- * heard, because each request carries the answers before it as history. A newer question never
- * cancels the one being answered: the recognizer splits on silence, so a pause mid-sentence can
- * end an utterance early, and cancelling would throw away the answer to the real question and
- * leave only the fragment that followed it.
+ * Every stable question gets its own answer. VAD-final fragments first pass through a textual
+ * accumulator, so a pause after a connective stays buffered and the next fragment completes the
+ * same question. Answers are generated one at a time, in the order they were heard, because each
+ * request carries the answers before it as history.
  *
  * A Host that configured a deep route answers each of those questions a second time, in depth,
  * on its own queue. The two queues are separate because a deep route is slow by construction:
@@ -67,6 +67,7 @@ export type Sender = (message: ServerMessage) => void
 export class LiveSession {
   private readonly history: QaTurn[] = []
   private readonly lifetime = new AbortController()
+  private readonly questions = new QuestionAccumulator()
   private tail: Promise<void> = Promise.resolve()
   private deepTail: Promise<void> = Promise.resolve()
   private background = ''
@@ -165,18 +166,26 @@ export class LiveSession {
       this.send({ type: 'error', message: event.message, fatal: false })
       return
     }
-    const id = UtteranceId(`${this.id}-${String(event.index)}`)
-    const text = event.text.trim()
-    target.append('live-assist/utterance', { id, text, seconds: event.seconds })
-    if (text === '') {
+    if (event.text.trim() === '') {
+      const id = UtteranceId(`${this.id}-${String(event.index)}`)
+      target.append('live-assist/utterance', { id, text: '', seconds: event.seconds })
       target.append('live-assist/skipped', { id, reason: 'empty-transcript' })
       return
     }
-    if (text.length < MIN_TRANSCRIPT_LENGTH) {
-      target.append('live-assist/skipped', { id, reason: 'too-short' })
-      return
+    const candidates = this.questions.push({ index: event.index, text: event.text, seconds: event.seconds })
+    for (const [offset, candidate] of candidates.entries()) {
+      const suffix = offset === 0 ? '' : `-${String(offset + 1)}`
+      const id = UtteranceId(`${this.id}-${String(candidate.sourceIndex)}${suffix}`)
+      const text = candidate.text.trim()
+      target.append('live-assist/utterance', { id, text, seconds: candidate.seconds })
+      if (text === '') {
+        target.append('live-assist/skipped', { id, reason: 'empty-transcript' })
+      } else if (text.length < MIN_TRANSCRIPT_LENGTH) {
+        target.append('live-assist/skipped', { id, reason: 'too-short' })
+      } else {
+        this.answer(target, id, text)
+      }
     }
-    this.answer(target, id, text)
   }
 
   private answer(target: Session, id: UtteranceId, question: string): void {

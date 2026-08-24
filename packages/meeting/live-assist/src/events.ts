@@ -13,7 +13,7 @@ declare module '@deepseek-ai/dsh-session/types' {
      */
     'live-assist/started': { background: string }
     /**
-     * One completed counterpart utterance, as the recognizer transcribed it: log-only,
+     * One stable counterpart question after VAD fragments have been accumulated: log-only,
      * non-surface, and never part of derived model history. `id` correlates it with the
      * `live-assist/answer-*` events that answer it.
      */

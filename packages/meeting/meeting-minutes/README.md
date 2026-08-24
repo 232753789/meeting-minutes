@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Optional Web profile bundle for browser-recorded meeting minutes. Its browser half contributes a card to the plugin configuration page, seats a microphone icon in the composer's tool row — where the tool drawer beside it also names the tool — opens on the stored meeting history, records the microphone — optionally mixed with the computer's own audio output — or uploads an existing MP4, shows progress, resumes or fully reprocesses a stored meeting, and downloads the preserved original, the plain-text transcript, or the completed Markdown; its Host half streams the original upload to private storage, transcodes it to MP4/AAC unless it already is MP4, transcribes sequential 16 kHz mono WAV chunks through Qwen3-ASR-1.7B, and summarizes the full transcript through `ctx.llm`. It does not modify `agent-loop` or the shipped Web profile.
+Optional Web profile bundle for browser-recorded meeting minutes. Its browser half contributes a card to the plugin configuration page, seats a microphone icon in the composer's tool row — where the tool drawer beside it also names the tool — opens on the stored meeting history, records the microphone — optionally mixed with the computer's own audio output — or uploads an existing MP4, shows progress, resumes or fully reprocesses a stored meeting, and downloads the preserved original, the plain-text transcript, or the completed Markdown; its Host half streams the original upload to private storage, transcodes it to MP4/AAC unless it already is MP4, optionally diarizes the normalized recording with a local pyannote pipeline, transcribes sequential 16 kHz mono WAV chunks through Qwen3-ASR-1.7B, and summarizes the full transcript through `ctx.llm`. It does not modify `agent-loop` or the shipped Web profile.
 
 ## Install
 
@@ -55,6 +55,25 @@ model-00002-of-00002.safetensors
 
 The Python process starts lazily on the first ASR chunk and retains the model for later chunks and meetings. It holds the whole model in device memory, so it is terminated once no chunk has been outstanding for `asrIdleShutdownMs` (five minutes by default); the next chunk starts it again and pays the load cost once more, so raise the value on hosts where loading is slow and lower it to release accelerator memory sooner. It loads the Hugging Face model files directly through `qwen-asr`; Ollama is not in this local inference path. `localDevice: auto` tries CUDA, then Apple MPS, then CPU. An accelerator load failure may fall back to CPU only in `auto` mode; local ASR never falls back to the remote endpoint. Qwen's upstream examples primarily target CUDA, so verify MPS throughput and memory with a short recording before relying on a long meeting.
 
+## Speaker diarization
+
+Speaker attribution is disabled by default. To distinguish voices in a mixed recording, install `pyannote.audio` in the same Python environment and prepare a local pyannote speaker-diarization pipeline directory containing its `config.yaml` and referenced model files:
+
+```bash
+python3 -m pip install -U pyannote.audio
+```
+
+The pipeline model may require accepting its Hugging Face terms and downloading gated files before it can be used locally. Configure the bundle as follows:
+
+```yaml
+speakerMode: pyannote
+speakerModelPath: /models/pyannote-speaker-diarization
+speakerRequestTimeoutMs: 1800000
+speakerIdleShutdownMs: 300000
+```
+
+The Host runs diarization once over the normalized recording, cuts one temporary ASR WAV for each detected speech interval, and attaches labels such as `speaker-1` to the transcript. The plain-text transcript and Markdown use `[说话人 1]` labels. These labels identify voices within one recording; they are not persistent identities and are not matched across meetings. When `speakerMode: off` is used, the existing fixed-duration ASR chunks remain active.
+
 ## Configuration
 
 The bundle defaults are in [`cordis.patch.yml`](cordis.patch.yml). A profile override replaces the row's complete `config`, so restate every field the row needs:
@@ -72,6 +91,10 @@ The bundle defaults are in [`cordis.patch.yml`](cordis.patch.yml). A profile ove
     asrRequestTimeoutMs: 1800000
     asrIdleShutdownMs: 300000
     asrMaxOutputTokens: 2048
+    speakerMode: off
+    speakerModelPath: /models/pyannote-speaker-diarization
+    speakerRequestTimeoutMs: 1800000
+    speakerIdleShutdownMs: 300000
     remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
     remoteModel: Qwen/Qwen3-ASR-1.7B
     remoteApiKeyEnv: QWEN_ASR_API_KEY
@@ -130,7 +153,7 @@ One recording produces:
 └── YYYY-MM-DD_HH-mm_<model-topic>_<minutes>m.md
 ```
 
-Files and directories are created with owner-only permissions. An MP4 original is its own playback file: FFmpeg transcodes only another container, so `audio.mp4` exists only then. The Markdown links to the preserved browser recording, adds an `audio.mp4` link only when that transcoded file exists, then contains the generated minutes and the full, non-speaker-attributed transcript. The filename carries the meeting date, its start time, the model topic, and its recorded length rounded up to whole minutes and never below one. Topic path characters are replaced, the filename topic is limited to 40 Unicode characters, `未命名会议` is used only when no usable topic remains, and a short meeting id is appended on collision.
+Files and directories are created with owner-only permissions. An MP4 original is its own playback file: FFmpeg transcodes only another container, so `audio.mp4` exists only then. The Markdown links to the preserved browser recording, adds an `audio.mp4` link only when that transcoded file exists, then contains the generated minutes and the full transcript; when speaker diarization is enabled, each detected interval carries its speaker label. The filename carries the meeting date, its start time, the model topic, and its recorded length rounded up to whole minutes and never below one. Topic path characters are replaced, the filename topic is limited to 40 Unicode characters, `未命名会议` is used only when no usable topic remains, and a short meeting id is appended on collision.
 
 The route family is `/meeting-minutes/api`. It accepts only loopback Host values and same-origin browser requests, so a Web GUI reached through a LAN address cannot use this plugin. This is a DNS-rebinding and cross-site request fence, not user authentication. Uploads stream directly to disk and stop at `maxUploadBytes`; original and normalized audio responses support byte ranges.
 
@@ -174,8 +197,9 @@ Summary requests are independent of the Agent conversation and of one another. T
 
 ## Known Limitations and Deferred Work
 
-- **No speaker diarization** — every transcript is plain meeting text; the plugin never invents speaker identities.
-- **Coarse timestamps only** — transcript timestamps mark fixed ASR chunk starts. Phrase- or word-level alignment requires a separate forced-aligner model and is not implemented.
+- **Speaker labels are recording-local** — pyannote labels voices as `speaker-1`, `speaker-2`, and so on within one recording; they are not names, persistent identities, or cross-meeting profiles.
+- **Diarization requires an optional local Python stack** — `speakerMode: pyannote` requires `pyannote.audio`, a compatible Torch device, and a prepared local pipeline directory. If diarization fails, the meeting fails rather than silently publishing unlabeled text.
+- **Coarse timestamps only** — transcript timestamps mark ASR chunk or diarized-interval starts. Phrase- or word-level alignment requires a separate forced-aligner model and is not implemented.
 - **Loopback browser only** — the raw upload and download routes intentionally reject LAN Host values until the Web surface has an authentication layer or exposes a reusable authenticated route helper.
 - **No resume inside one chunk or request** — a resume continues at the ASR chunk or summary request that failed, never partway through one. A chunk whose ASR call failed at the last second is transcribed again in full.
 - **System audio depends on the browser** — the plugin can only ask for a share with audio. Firefox and Safari never provide it, and older Chrome builds provide it only on Windows and ChromeOS. There is no Host-side capture path that would work without a browser share or a virtual loopback device.

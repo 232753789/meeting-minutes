@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-用于浏览器录音并生成会议纪要的可选 Web profile 组合包。浏览器端在插件配置页贡献一张配置卡片，在输入框的工具行中占一个麦克风图标——旁边的工具抽屉里也会写出它的名称，打开会议纪要对话框即显示已存会议清单，可以录音（并可选择同时录制电脑内放的声音）或上传已有 MP4，展示处理进度，续跑或完整重新解析已存会议，并下载保留的原始录音、纯文本转写或最终 Markdown；Host 端把原始上传流式写入私有存储，原始文件不是 MP4 时才转换为 MP4/AAC，将音频切成 16 kHz 单声道 WAV 后通过 Qwen3-ASR-1.7B 顺序转写，再通过 `ctx.llm` 总结全量文字。本包不修改 `agent-loop`，也不会自动加入随附的 Web profile。
+用于浏览器录音并生成会议纪要的可选 Web profile 组合包。浏览器端在插件配置页贡献一张配置卡片，在输入框的工具行中占一个麦克风图标——旁边的工具抽屉里也会写出它的名称，打开会议纪要对话框即显示已存会议清单，可以录音（并可选择同时录制电脑内放的声音）或上传已有 MP4，展示处理进度，续跑或完整重新解析已存会议，并下载保留的原始录音、纯文本转写或最终 Markdown；Host 端把原始上传流式写入私有存储，原始文件不是 MP4 时才转换为 MP4/AAC，可选地使用本地 pyannote pipeline 对标准化录音做说话人分离，将音频切成 16 kHz 单声道 WAV 后通过 Qwen3-ASR-1.7B 顺序转写，再通过 `ctx.llm` 总结全量文字。本包不修改 `agent-loop`，也不会自动加入随附的 Web profile。
 
 ## 安装
 
@@ -55,6 +55,25 @@ model-00002-of-00002.safetensors
 
 Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片与会议之间常驻复用模型。该进程把整个模型保留在设备内存中，因此在没有分片处理的时间超过 `asrIdleShutdownMs`（默认五分钟）后会被终止；下一个分片重新启动进程并再次承担加载开销，所以在加载缓慢的主机上应调大该值，需要更早释放加速设备内存时调小它。它通过 `qwen-asr` 直接加载 Hugging Face 模型文件，本地推理路径不经过 Ollama。`localDevice: auto` 依次尝试 CUDA、Apple MPS 和 CPU；只有 `auto` 模式会在加速设备加载失败时转到 CPU，本地 ASR 绝不会自动转用远程 endpoint。Qwen 上游示例主要面向 CUDA，因此正式处理长会议之前，应先用短录音验证 MPS 的速度与内存占用。
 
+## 说话人分离
+
+说话人标注默认关闭。要区分混合录音中的不同声音，请在同一个 Python 环境安装 `pyannote.audio`，并准备一个本地 pyannote 说话人分离 pipeline 目录，其中包含 `config.yaml` 及其引用的模型文件：
+
+```bash
+python3 -m pip install -U pyannote.audio
+```
+
+pipeline 模型在本地使用前可能需要接受 Hugging Face 条款并下载受限文件。配置 bundle：
+
+```yaml
+speakerMode: pyannote
+speakerModelPath: /models/pyannote-speaker-diarization
+speakerRequestTimeoutMs: 1800000
+speakerIdleShutdownMs: 300000
+```
+
+Host 会对标准化录音完整运行一次说话人分离，为每个检测到的说话区间切出临时 ASR WAV，并把 `speaker-1` 等标签附加到转写段。纯文本转写和 Markdown 使用 `[说话人 1]` 标签。这些标签只在当前录音内区分声音，不是持久身份，也不会跨会议匹配。使用 `speakerMode: off` 时，仍采用原有的固定时长 ASR 分片。
+
 ## 配置
 
 组合包默认值位于 [`cordis.patch.yml`](cordis.patch.yml)。profile 覆盖会替换该行的整个 `config`，因此必须重述该行需要的所有字段：
@@ -72,6 +91,10 @@ Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片�
     asrRequestTimeoutMs: 1800000
     asrIdleShutdownMs: 300000
     asrMaxOutputTokens: 2048
+    speakerMode: off
+    speakerModelPath: /models/pyannote-speaker-diarization
+    speakerRequestTimeoutMs: 1800000
+    speakerIdleShutdownMs: 300000
     remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
     remoteModel: Qwen/Qwen3-ASR-1.7B
     remoteApiKeyEnv: QWEN_ASR_API_KEY
@@ -130,7 +153,7 @@ Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片�
 └── YYYY-MM-DD_HH-mm_<model-topic>_<minutes>m.md
 ```
 
-文件和目录均以仅所有者可访问的权限创建。MP4 原始文件本身就是播放文件：FFmpeg 只转换其他容器格式，因此只有那时才会生成 `audio.mp4`。Markdown 先链接保留的浏览器原始录音，仅在存在转换产物时追加 `audio.mp4` 链接，再包含生成的纪要和不区分发言人的全量转写。文件名由会议日期、开始时间、模型主题和录音时长组成，时长向上取整到整分钟且不小于 1。主题中的路径字符会被替换，文件名中的主题最多保留 40 个 Unicode 字符；只有主题清理后为空时才使用 `未命名会议`，发生重名时追加短 meeting id。
+文件和目录均以仅所有者可访问的权限创建。MP4 原始文件本身就是播放文件：FFmpeg 只转换其他容器格式，因此只有那时才会生成 `audio.mp4`。Markdown 先链接保留的浏览器原始录音，仅在存在转换产物时追加 `audio.mp4` 链接，再包含生成的纪要和全量转写；启用说话人分离时，每个检测到的区间都会带有说话人标签。文件名由会议日期、开始时间、模型主题和录音时长组成，时长向上取整到整分钟且不小于 1。主题中的路径字符会被替换，文件名中的主题最多保留 40 个 Unicode 字符；只有主题清理后为空时才使用 `未命名会议`，发生重名时追加短 meeting id。
 
 路由族为 `/meeting-minutes/api`。它只接受回环 Host 和同源浏览器请求，因此通过局域网地址访问的 Web GUI 不能使用本插件。这是 DNS 重绑定与跨站请求防护，不是用户身份认证。上传会直接流式写盘，并在 `maxUploadBytes` 处停止；原始音频与标准化音频响应均支持字节范围请求。
 
@@ -174,8 +197,9 @@ Python 进程在第一个 ASR 分片到来时延迟启动，并在后续分片�
 
 ## 已知限制与延期工作
 
-- **不区分发言人**：所有转写都是普通会议文字，插件不会虚构发言人身份。
-- **只有粗粒度时间戳**：转写时间戳只标记固定 ASR 分片的起点；短语级或词级对齐需要独立的 forced-aligner 模型，目前未实现。
+- **说话人标签只在当前录音内有效**：pyannote 会在一段录音内标出 `speaker-1`、`speaker-2` 等标签；它们不是姓名、持久身份或跨会议声纹档案。
+- **说话人分离需要可选的本地 Python 技术栈**：`speakerMode: pyannote` 需要 `pyannote.audio`、兼容的 Torch 设备和准备好的本地 pipeline 目录。分离失败时会议会失败，不会静默发布没有标签的文字。
+- **只有粗粒度时间戳**：转写时间戳只标记固定 ASR 分片或说话人区间的起点；短语级或词级对齐需要独立的 forced-aligner 模型，目前未实现。
 - **仅支持回环浏览器**：在 Web 界面拥有认证层或公开可复用的认证路由辅助函数之前，原始上传与下载路由会主动拒绝局域网 Host。
 - **不在单个分片或请求内部续跑**：续跑从失败的那个 ASR 分片或摘要请求开始，而不会从某个分片或请求的中途继续。ASR 调用在最后一刻失败的分片仍要完整重转。
 - **系统音频取决于浏览器**：插件只能请求一次带音频的共享。Firefox 与 Safari 从不提供，较旧的 Chrome 只在 Windows 与 ChromeOS 上提供。不存在既不依赖浏览器共享、也不依赖虚拟回环设备的 Host 侧采集路径。

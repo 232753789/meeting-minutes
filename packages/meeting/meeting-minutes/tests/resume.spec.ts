@@ -45,7 +45,7 @@ async function stored(prefix: string, extra: Partial<MeetingRecord> = {}): Promi
 function chunker(directory: string, count: number): () => Promise<{
   audioFilename: string
   chunkDirectory: string
-  chunks: string[]
+  chunks: { path: string; startSeconds: number; endSeconds: number }[]
 }> {
   return async () => {
     const chunkDirectory = join(directory, '.wav-chunks')
@@ -53,7 +53,15 @@ function chunker(directory: string, count: number): () => Promise<{
     const chunks = Array.from({ length: count }, (_value, index) =>
       join(chunkDirectory, `chunk-0000${String(index)}.wav`))
     await Promise.all(chunks.map(path => writeFile(path, 'wav')))
-    return { audioFilename: 'original.mp4', chunkDirectory, chunks }
+    return {
+      audioFilename: 'original.mp4',
+      chunkDirectory,
+      chunks: chunks.map((path, index) => ({
+        path,
+        startSeconds: index * 300,
+        endSeconds: (index + 1) * 300,
+      })),
+    }
   }
 }
 

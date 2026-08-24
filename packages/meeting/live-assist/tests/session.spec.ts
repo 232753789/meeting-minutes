@@ -91,6 +91,22 @@ describe('LiveSession', () => {
     await session.dispose()
   })
 
+  it('accumulates a connective-ended fragment before triage', async () => {
+    const { session, worker, requests, target } = await harness([{ deltas: ['ANSWER\n答'] }])
+    speak(worker, 1, '你在上一家公司主要负责')
+    await session.settled()
+    expect(requests).toHaveLength(0)
+    expect(target.types).not.toContain('live-assist/utterance')
+
+    speak(worker, 2, '支付系统，最难的部分是什么')
+    await session.settled()
+    expect(requests).toHaveLength(1)
+    expect(target.appended.find(entry => entry.type === 'live-assist/utterance')).toMatchObject({
+      data: { text: '你在上一家公司主要负责支付系统，最难的部分是什么' },
+    })
+    await session.dispose()
+  })
+
   it('passes an answered question into the next request as history', async () => {
     const { session, worker, requests } = await harness([{ deltas: ['ANSWER\n第一答'] }])
     speak(worker, 1, '第一问')

@@ -1372,6 +1372,14 @@ export interface Config {
   asrIdleShutdownMs?: number
   /** Generated-token cap for each ASR chunk. */
   asrMaxOutputTokens?: number
+  /** Speaker attribution mode for mixed recordings. */
+  speakerMode?: 'off' | 'pyannote'
+  /** Local pyannote pipeline directory used when speakerMode is pyannote. */
+  speakerModelPath?: string
+  /** Deadline for one complete diarization request. */
+  speakerRequestTimeoutMs?: number
+  /** Idle time before the diarization process is stopped. */
+  speakerIdleShutdownMs?: number
   /** Complete remote chat-completions endpoint. */
   remoteEndpoint?: string
   /** Model id sent to the remote ASR server. */

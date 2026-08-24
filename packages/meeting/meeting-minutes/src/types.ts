@@ -24,13 +24,20 @@ export type MeetingStage = 'queued' | 'normalizing' | 'transcribing' | 'summariz
  */
 export type MeetingRetryMode = 'resume' | 'restart'
 
-/** One coarse, non-speaker-attributed ASR segment. */
+/** Speaker label assigned by the configured diarization provider. */
+export type SpeakerId = `speaker-${number}`
+
+/** One ASR segment with optional speaker attribution and time range. */
 export interface TranscriptSegment {
   /** Zero-based source chunk. */
   readonly index: number
-  /** Coarse beginning of this chunk in the normalized recording. */
+  /** Beginning of this segment in the normalized recording. */
   readonly startSeconds: number
-  /** ASR text for the complete chunk. */
+  /** End of this segment in the normalized recording, when available. */
+  readonly endSeconds?: number
+  /** Speaker assigned by diarization, when enabled. */
+  readonly speaker?: SpeakerId
+  /** ASR text for the complete segment. */
   readonly text: string
 }
 
@@ -83,6 +90,8 @@ export interface MeetingDeleted {
 export interface TranscriptProgress {
   /** Chunk duration the segments were produced with; a changed value invalidates them. */
   readonly chunkSeconds: number
+  /** Whether segments use fixed time chunks or diarized speaker intervals. */
+  readonly layout?: 'fixed' | 'speaker'
   /** Completed segments, indexed from zero without gaps. */
   readonly segments: readonly TranscriptSegment[]
 }

@@ -544,14 +544,14 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * One completed counterpart utterance, as the recognizer transcribed it: log-only,
+ * One stable counterpart question after VAD fragments have been accumulated: log-only,
  * non-surface, and never part of derived model history. `id` correlates it with the
  * `live-assist/answer-*` events that answer it.
  */
 'live-assist/utterance': { id: UtteranceId; text: string; seconds: number }
 ```
 
-来源：[`packages/meeting/live-assist/src/events.ts:19`](../packages/meeting/live-assist/src/events.ts)
+来源：[`packages/meeting/live-assist/src/events.ts:20`](../packages/meeting/live-assist/src/events.ts)
 
 ### `llm/*`
 

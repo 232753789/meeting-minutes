@@ -39,7 +39,15 @@ describe('meeting processing runtime', () => {
         const paths = [join(chunks, 'chunk-00000.wav'), join(chunks, 'chunk-00001.wav')]
         await Promise.all(paths.map((path, index) => writeFile(path, `chunk ${String(index)}`)))
         await writeFile(join(directory, 'audio.mp4'), 'mp4')
-        return { audioFilename: 'audio.mp4', chunkDirectory: chunks, chunks: paths }
+        return {
+          audioFilename: 'audio.mp4',
+          chunkDirectory: chunks,
+          chunks: paths.map((path, index) => ({
+            path,
+            startSeconds: index * config.asrChunkSeconds,
+            endSeconds: (index + 1) * config.asrChunkSeconds,
+          })),
+        }
       },
       remoteAsr: async (_config, path) => path.endsWith('00000.wav') ? '第一段。' : '第二段。',
       summarize: async () => ({ topic: '项目周会', summaryMarkdown: '### 决策\n\n继续推进。' }),
@@ -93,7 +101,7 @@ describe('meeting processing runtime', () => {
       const chunk = join(chunks, 'chunk-00000.wav')
       await writeFile(chunk, 'chunk')
       await writeFile(join(directory, 'audio.mp4'), 'mp4')
-      return { audioFilename: 'audio.mp4', chunkDirectory: chunks, chunks: [chunk] }
+      return { audioFilename: 'audio.mp4', chunkDirectory: chunks, chunks: [{ path: chunk, startSeconds: 0, endSeconds: config.asrChunkSeconds }] }
     })
     const runtime = new MeetingMinutesRuntime({ logger: { warn: vi.fn() } } as unknown as Context, config, {
       normalize,
@@ -214,7 +222,7 @@ describe('meeting history projection and reprocessing', () => {
         const chunk = join(chunks, 'chunk-00000.wav')
         await writeFile(chunk, 'chunk')
         await writeFile(join(directory, 'audio.mp4'), 'mp4')
-        return { audioFilename: 'audio.mp4', chunkDirectory: chunks, chunks: [chunk] }
+        return { audioFilename: 'audio.mp4', chunkDirectory: chunks, chunks: [{ path: chunk, startSeconds: 0, endSeconds: config.asrChunkSeconds }] }
       },
       remoteAsr: async () => '第二次转写。',
       summarize: async () => ({ topic: '第二次解析', summaryMarkdown: '### 决策\n\n第二次。' }),

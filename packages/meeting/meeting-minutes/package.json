@@ -108,6 +108,7 @@
     "lib/client.js",
     "cordis.patch.yml",
     "python/asr_worker.py",
+    "python/diarization_worker.py",
     "lib/types/**/*.d.ts"
   ]
 }

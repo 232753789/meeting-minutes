@@ -28,6 +28,14 @@ export interface Config {
   asrIdleShutdownMs?: number
   /** Generated-token cap for each ASR chunk. */
   asrMaxOutputTokens?: number
+  /** Speaker attribution mode for mixed recordings. */
+  speakerMode?: 'off' | 'pyannote'
+  /** Local pyannote pipeline directory used when speakerMode is pyannote. */
+  speakerModelPath?: string
+  /** Deadline for one complete diarization request. */
+  speakerRequestTimeoutMs?: number
+  /** Idle time before the diarization process is stopped. */
+  speakerIdleShutdownMs?: number
   /** Complete remote chat-completions endpoint. */
   remoteEndpoint?: string
   /** Model id sent to the remote ASR server. */
@@ -68,6 +76,10 @@ export interface ResolvedConfig {
   readonly asrRequestTimeoutMs: number
   readonly asrIdleShutdownMs: number
   readonly asrMaxOutputTokens: number
+  readonly speakerMode: 'off' | 'pyannote'
+  readonly speakerModelPath: string
+  readonly speakerRequestTimeoutMs: number
+  readonly speakerIdleShutdownMs: number
   readonly remoteEndpoint: string
   readonly remoteModel: string
   readonly remoteApiKeyEnv: string
@@ -98,6 +110,7 @@ const REQUIRED_MODEL_FILES = [
 
 const DEFAULT_REMOTE_ENDPOINT = 'http://127.0.0.1:8000/v1/chat/completions'
 const DEFAULT_REMOTE_MODEL = 'Qwen/Qwen3-ASR-1.7B'
+const DEFAULT_SPEAKER_MODEL_PATH = dshHomePath('models', 'pyannote-speaker-diarization')
 const MIN_SUMMARY_INPUT_BYTES = 8 * 1024
 
 /** Schemastery declaration for profile composition. */
@@ -112,6 +125,10 @@ export const Config: z<Config> = z.object({
   asrRequestTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(1_800_000),
   asrIdleShutdownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(300_000),
   asrMaxOutputTokens: z.number().step(1).min(1).default(2_048),
+  speakerMode: z.union(['off', 'pyannote'] as const).default('off'),
+  speakerModelPath: z.string(),
+  speakerRequestTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(1_800_000),
+  speakerIdleShutdownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(300_000),
   remoteEndpoint: z.string().default(DEFAULT_REMOTE_ENDPOINT),
   remoteModel: z.string().default(DEFAULT_REMOTE_MODEL),
   remoteApiKeyEnv: z.string().default('QWEN_ASR_API_KEY'),
@@ -138,6 +155,17 @@ function positiveInteger(name: string, value: number, maximum = Number.MAX_SAFE_
     throw new Error(`meeting-minutes: ${name} must be a positive integer no greater than ${String(maximum)}`)
   }
   return value
+}
+
+/** Verify that an enabled diarization path points at a local pyannote pipeline directory. */
+function validateSpeakerModel(modelPath: string): void {
+  let directory = false
+  try {
+    directory = statSync(modelPath).isDirectory()
+  } catch {
+    // The diagnostic below owns the missing-path case.
+  }
+  if (!directory) throw new Error(`meeting-minutes: speakerModelPath is not a directory: ${modelPath}`)
 }
 
 /**
@@ -191,6 +219,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
     MAX_TIMER_DELAY_MS,
   )
   const asrMaxOutputTokens = positiveInteger('asrMaxOutputTokens', config.asrMaxOutputTokens ?? 2_048)
+  const speakerMode = config.speakerMode ?? 'off'
+  const speakerModelPath = resolve(expandHomePath(config.speakerModelPath ?? DEFAULT_SPEAKER_MODEL_PATH))
+  const speakerRequestTimeoutMs = positiveInteger(
+    'speakerRequestTimeoutMs',
+    config.speakerRequestTimeoutMs ?? 1_800_000,
+    MAX_TIMER_DELAY_MS,
+  )
+  const speakerIdleShutdownMs = positiveInteger(
+    'speakerIdleShutdownMs',
+    config.speakerIdleShutdownMs ?? 300_000,
+    MAX_TIMER_DELAY_MS,
+  )
   const remoteEndpoint = requiredString('remoteEndpoint', config.remoteEndpoint ?? DEFAULT_REMOTE_ENDPOINT)
   const remoteModel = requiredString('remoteModel', config.remoteModel ?? DEFAULT_REMOTE_MODEL)
   const remoteApiKeyEnv = requiredString('remoteApiKeyEnv', config.remoteApiKeyEnv ?? 'QWEN_ASR_API_KEY')
@@ -250,6 +290,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     ? undefined
     : requiredString('ffmpegExecutable', config.ffmpegExecutable)
   if (asrMode === 'local') validateLocalModel(localModelPath)
+  if (speakerMode === 'pyannote') validateSpeakerModel(speakerModelPath)
   return Object.freeze({
     storageRoot,
     asrMode,
@@ -261,6 +302,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
     asrRequestTimeoutMs,
     asrIdleShutdownMs,
     asrMaxOutputTokens,
+    speakerMode,
+    speakerModelPath,
+    speakerRequestTimeoutMs,
+    speakerIdleShutdownMs,
     remoteEndpoint: endpoint.toString(),
     remoteModel,
     remoteApiKeyEnv,

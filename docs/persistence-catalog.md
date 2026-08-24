@@ -542,7 +542,7 @@ Source: [`packages/meeting/live-assist/src/events.ts:14`](../packages/meeting/li
 
 ```ts persistence-catalog
 /**
- * One completed counterpart utterance, as the recognizer transcribed it: log-only,
+ * One stable counterpart question after VAD fragments have been accumulated: log-only,
  * non-surface, and never part of derived model history. `id` correlates it with the
  * `live-assist/answer-*` events that answer it.
  */

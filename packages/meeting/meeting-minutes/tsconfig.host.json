@@ -14,6 +14,7 @@
     "src/invariant.ts",
     "src/lifecycle.ts",
     "src/runtime.ts",
+    "src/speaker.ts",
     "src/storage.ts",
     "src/summary.ts",
     "src/types.ts"

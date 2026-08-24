@@ -1,12 +1,15 @@
 /** Serial meeting-processing lifecycle and teardown ownership. */
 
 import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { transcribeRemote, LocalAsrWorker } from './asr.ts'
 import type { ResolvedConfig } from './config.ts'
-import { normalizeAndChunk } from './ffmpeg.ts'
+import { normalizeAndChunk, splitDiarizedAudio, type AsrChunk } from './ffmpeg.ts'
+import { LocalSpeakerWorker, type SpeakerInterval } from './speaker.ts'
 import {
   availableMinutesFilename,
+  meetingDirectory,
   listMeetings,
   meetingDisplayName,
   readCompletedTranscript,
@@ -48,6 +51,7 @@ interface RuntimeOperations {
   normalize: typeof normalizeAndChunk
   remoteAsr: typeof transcribeRemote
   summarize: typeof summarizeMeeting
+  diarize?: (audioPath: string, signal: AbortSignal) => Promise<readonly SpeakerInterval[]>
 }
 
 /** Result of admitting one durable meeting for another processing attempt. */
@@ -74,6 +78,7 @@ export class MeetingMinutesRuntime {
   private readonly active = new Set<MeetingId>()
   private readonly admissions = new Set<Promise<unknown>>()
   private readonly localWorker: LocalAsrWorker | undefined
+  private readonly speakerWorker: LocalSpeakerWorker | undefined
   private tail: Promise<void> = Promise.resolve()
   private closed = false
 
@@ -83,6 +88,7 @@ export class MeetingMinutesRuntime {
     private readonly operations: RuntimeOperations = DEFAULT_OPERATIONS,
   ) {
     this.localWorker = config.asrMode === 'local' ? new LocalAsrWorker(ctx, config) : undefined
+    this.speakerWorker = config.speakerMode === 'pyannote' ? new LocalSpeakerWorker(ctx, config) : undefined
   }
 
   /**
@@ -227,6 +233,13 @@ export class MeetingMinutesRuntime {
     return await this.localWorker.transcribe(path, signal)
   }
 
+  private async diarize(audioPath: string, signal: AbortSignal): Promise<readonly SpeakerInterval[]> {
+    if (this.config.speakerMode === 'off') return []
+    if (this.operations.diarize !== undefined) return await this.operations.diarize(audioPath, signal)
+    if (this.speakerWorker === undefined) throw new Error('meeting-minutes: speaker worker is unavailable')
+    return await this.speakerWorker.diarize(audioPath, signal)
+  }
+
   /**
    * Produce the transcript, transcribing only the chunks no previous attempt completed.
    *
@@ -241,32 +254,59 @@ export class MeetingMinutesRuntime {
     }
     await updateRecord(this.config, record, { stage: 'normalizing' })
     const normalized = await this.operations.normalize(this.ctx, this.config, record, signal)
-    const segments: TranscriptSegment[] = await readTranscriptProgress(
-      this.config,
-      record.id,
-      normalized.chunks.length,
-    )
-    const resumed = segments.length
-    await updateRecord(this.config, record, {
-      normalizedAudio: normalized.audioFilename,
-      totalChunks: normalized.chunks.length,
-      completedChunks: resumed,
-      stage: 'transcribing',
-    })
+    let chunkDirectory = normalized.chunkDirectory
     try {
-      for (const [offset, chunk] of normalized.chunks.slice(resumed).entries()) {
+      const speakerIntervals = await this.diarize(
+        join(meetingDirectory(this.config, record.id), normalized.audioFilename),
+        signal,
+      )
+      let chunks: AsrChunk[] = normalized.chunks
+      let layout: 'fixed' | 'speaker' = 'fixed'
+      if (speakerIntervals.length > 0) {
+        const diarized = await splitDiarizedAudio(
+          this.ctx,
+          this.config,
+          record,
+          normalized.audioFilename,
+          speakerIntervals,
+          signal,
+        )
+        chunkDirectory = diarized.chunkDirectory
+        chunks = diarized.chunks
+        layout = 'speaker'
+      }
+      const segments: TranscriptSegment[] = await readTranscriptProgress(
+        this.config,
+        record.id,
+        chunks.length,
+        layout,
+      )
+      const resumed = segments.length
+      await updateRecord(this.config, record, {
+        normalizedAudio: normalized.audioFilename,
+        totalChunks: chunks.length,
+        completedChunks: resumed,
+        stage: 'transcribing',
+      })
+      for (const [offset, chunk] of chunks.slice(resumed).entries()) {
         signal.throwIfAborted()
         const index = resumed + offset
-        const text = await this.transcribe(chunk, signal)
-        segments.push({ index, startSeconds: index * this.config.asrChunkSeconds, text })
-        await writeTranscriptProgress(this.config, record.id, segments)
+        const text = await this.transcribe(chunk.path, signal)
+        segments.push({
+          index,
+          startSeconds: chunk.startSeconds,
+          endSeconds: chunk.endSeconds,
+          ...(chunk.speaker === undefined ? {} : { speaker: chunk.speaker }),
+          text,
+        })
+        await writeTranscriptProgress(this.config, record.id, segments, layout)
         await updateRecord(this.config, record, { completedChunks: segments.length })
       }
       const transcript = await writeTranscript(this.config, record.id, segments)
       await removeTranscriptProgress(this.config, record.id)
       return { audioFilename: normalized.audioFilename, segments, ...transcript }
     } finally {
-      await rm(normalized.chunkDirectory, { recursive: true, force: true })
+      await rm(chunkDirectory, { recursive: true, force: true })
     }
   }
 
@@ -333,6 +373,7 @@ export class MeetingMinutesRuntime {
     this.closed = true
     this.lifetime.abort(new Error('meeting-minutes: plugin disposed'))
     await Promise.allSettled(this.admissions)
+    await this.speakerWorker?.dispose()
     await this.localWorker?.dispose()
     await this.tail
   }

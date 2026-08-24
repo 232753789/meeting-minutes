@@ -15,6 +15,10 @@
         asrRequestTimeoutMs: 1800000
         asrIdleShutdownMs: 300000
         asrMaxOutputTokens: 2048
+        speakerMode: off
+        speakerModelPath: !!js dshHomePath('models', 'pyannote-speaker-diarization')
+        speakerRequestTimeoutMs: 1800000
+        speakerIdleShutdownMs: 300000
         remoteEndpoint: http://127.0.0.1:8000/v1/chat/completions
         remoteModel: Qwen/Qwen3-ASR-1.7B
         remoteApiKeyEnv: QWEN_ASR_API_KEY

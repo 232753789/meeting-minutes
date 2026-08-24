@@ -179,7 +179,14 @@ export async function updateRecord(
  * @returns Transcript text without timestamps or empty segments.
  */
 export function transcriptFullText(segments: readonly TranscriptSegment[]): string {
-  return segments.map(segment => segment.text.trim()).filter(Boolean).join('\n')
+  return segments
+    .map(segment => `${speakerLabel(segment)}${segment.text.trim()}`.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
+function speakerLabel(segment: TranscriptSegment): string {
+  return segment.speaker === undefined ? '' : `[说话人 ${segment.speaker.slice('speaker-'.length)}] `
 }
 
 /**
@@ -215,13 +222,15 @@ export async function writeTranscript(
  * @param config Resolved plugin configuration.
  * @param id Meeting id that owns the transcription.
  * @param segments Completed segments in chunk order.
+ * @param layout Whether the progress uses fixed chunks or diarized speaker intervals.
  */
 export function writeTranscriptProgress(
   config: ResolvedConfig,
   id: MeetingId,
   segments: readonly TranscriptSegment[],
+  layout: 'fixed' | 'speaker' = 'fixed',
 ): Promise<void> {
-  const progress: TranscriptProgress = { chunkSeconds: config.asrChunkSeconds, segments }
+  const progress: TranscriptProgress = { chunkSeconds: config.asrChunkSeconds, layout, segments }
   return writeMeetingText(config, id, TRANSCRIPT_PROGRESS_FILENAME, `${JSON.stringify(progress, null, 2)}\n`)
 }
 
@@ -250,13 +259,25 @@ async function readJsonObject(path: string): Promise<Record<string, unknown> | u
   }
 }
 
-function validSegments(value: unknown, chunkSeconds: number, totalChunks: number): TranscriptSegment[] | undefined {
+function validSegments(
+  value: unknown,
+  chunkSeconds: number,
+  totalChunks: number,
+  layout: 'fixed' | 'speaker' | 'any' = 'fixed',
+): TranscriptSegment[] | undefined {
   if (!Array.isArray(value) || value.length > totalChunks) return undefined
   const segments: TranscriptSegment[] = []
   for (const [index, entry] of value.entries()) {
     const segment = objectRecord(entry)
     if (segment === undefined) return undefined
-    if (segment.index !== index || segment.startSeconds !== index * chunkSeconds) return undefined
+    if (segment.index !== index || typeof segment.startSeconds !== 'number' || !Number.isFinite(segment.startSeconds)) return undefined
+    if (layout === 'fixed' && segment.startSeconds !== index * chunkSeconds) return undefined
+    if (segment.endSeconds !== undefined
+      && (typeof segment.endSeconds !== 'number' || !Number.isFinite(segment.endSeconds) || segment.endSeconds <= segment.startSeconds)) {
+      return undefined
+    }
+    if (segment.speaker !== undefined
+      && (typeof segment.speaker !== 'string' || !/^speaker-[0-9]+$/u.test(segment.speaker))) return undefined
     if (typeof segment.text !== 'string') return undefined
     segments.push(segment as unknown as TranscriptSegment)
   }
@@ -272,16 +293,20 @@ function validSegments(value: unknown, chunkSeconds: number, totalChunks: number
  * @param config Resolved plugin configuration.
  * @param id Validated meeting id.
  * @param totalChunks Chunks this attempt will transcribe.
+ * @param layout Whether the progress uses fixed chunks or diarized speaker intervals.
  * @returns Reusable leading segments, empty when none apply.
  */
 export async function readTranscriptProgress(
   config: ResolvedConfig,
   id: MeetingId,
   totalChunks: number,
+  layout: 'fixed' | 'speaker' = 'fixed',
 ): Promise<TranscriptSegment[]> {
   const value = await readJsonObject(join(meetingDirectory(config, id), TRANSCRIPT_PROGRESS_FILENAME))
   if (value === undefined || value.chunkSeconds !== config.asrChunkSeconds) return []
-  return validSegments(value.segments, config.asrChunkSeconds, totalChunks) ?? []
+  if (layout === 'speaker' && value.layout !== 'speaker') return []
+  if (layout === 'fixed' && value.layout !== undefined && value.layout !== 'fixed') return []
+  return validSegments(value.segments, config.asrChunkSeconds, totalChunks, layout) ?? []
 }
 
 /**
@@ -315,7 +340,7 @@ export async function readCompletedTranscript(
   }
   const value = await readJsonObject(join(meetingDirectory(config, record.id), transcriptJson))
   if (value === undefined || !Array.isArray(value.segments)) return undefined
-  const segments = validSegments(value.segments, config.asrChunkSeconds, value.segments.length)
+  const segments = validSegments(value.segments, config.asrChunkSeconds, value.segments.length, 'any')
   if (segments === undefined || segments.length === 0) return undefined
   return { audioFilename: normalizedAudio, json: transcriptJson, text: transcriptText, segments }
 }
@@ -558,7 +583,7 @@ export function renderMinutes(
     return [hours, minutes, remainder].map(value => String(value).padStart(2, '0')).join(':')
   }
   const transcript = segments
-    .map(segment => `[${timestamp(segment.startSeconds)}] ${segment.text.trim()}`)
+    .map(segment => `[${timestamp(segment.startSeconds)}] ${speakerLabel(segment)}${segment.text.trim()}`)
     .join('\n\n')
   return [
     `# ${topic}`,

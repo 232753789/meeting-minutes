@@ -13,6 +13,7 @@
     "src/invariant.ts",
     "src/lifecycle.ts",
     "src/protocol.ts",
+    "src/question-segmentation.ts",
     "src/session.ts",
     "src/title.ts",
     "src/worker.ts",

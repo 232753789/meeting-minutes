@@ -5,7 +5,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { describe, expect, it } from 'vitest'
 import { resolveConfig } from '../src/config.ts'
-import { normalizeAndChunk } from '../src/ffmpeg.ts'
+import { normalizeAndChunk, splitDiarizedAudio } from '../src/ffmpeg.ts'
 import { meetingDirectory } from '../src/storage.ts'
 import { MeetingId, type MeetingRecord } from '../src/types.ts'
 
@@ -124,5 +124,28 @@ describe('meeting audio preparation', () => {
       AbortSignal.timeout(5_000),
     )).rejects.toThrow('Invalid data found when processing input')
     expect(await readdir(meetingDirectory(config, ID))).not.toContain('.wav-chunks')
+  })
+
+  it('cuts one ASR file for each diarized speaker interval', async () => {
+    const { config, record } = await meeting('original.mp4')
+    const runs: string[][] = []
+    const result = await splitDiarizedAudio(
+      fakeSubprocess(runs),
+      config,
+      record,
+      'original.mp4',
+      [
+        { startSeconds: 0, endSeconds: 1.5, speaker: 'speaker-1' },
+        { startSeconds: 1.5, endSeconds: 3, speaker: 'speaker-2' },
+      ],
+      AbortSignal.timeout(5_000),
+    )
+
+    expect(result.chunks[0]?.path).toContain('speaker-00000.wav')
+    expect(result.chunks[0]?.speaker).toBe('speaker-1')
+    expect(result.chunks[1]?.path).toContain('speaker-00001.wav')
+    expect(result.chunks[1]?.speaker).toBe('speaker-2')
+    expect(runs).toHaveLength(2)
+    expect(runs[0]).toEqual(expect.arrayContaining(['-ss', '0', '-t', '1.5', '-i', 'original.mp4']))
   })
 })
