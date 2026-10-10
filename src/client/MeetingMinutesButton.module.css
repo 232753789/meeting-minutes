@@ -1,0 +1,331 @@
+.toolbarButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolbarButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolbarButton[data-recording='true'] {
+  color: var(--dsw-alias-label-error);
+}
+
+.mic {
+  position: relative;
+  width: 10px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 7px;
+}
+
+.mic::after {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  border-left: 1px solid currentColor;
+  border-radius: 0 0 6px 6px;
+  content: '';
+  transform: translateX(-50%);
+}
+
+.toolbarTimer {
+  font-family: var(--dsw-font-mono);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.dialog {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+}
+
+.content {
+  min-height: 0;
+  overflow: auto;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.progress {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-mono);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  /* The header plus five 37px rows; a sixth meeting starts scrolling. */
+  max-height: calc(34px + 5 * 37px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.listHead,
+.listOpen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.listHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Reserves the row action column so both header labels sit above their values. */
+  padding-right: 84px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--dsw-alias-border-normal);
+}
+
+.listRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.listOpen {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.listActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 72px;
+  padding-right: 12px;
+}
+
+.listDelete,
+.listConfirm,
+.listCancel {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.listDelete:hover:not(:disabled),
+.listConfirm:hover {
+  border-color: var(--dsw-alias-label-error);
+  color: var(--dsw-alias-label-error);
+}
+
+.listDelete:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.listConfirm {
+  border-color: var(--dsw-alias-label-error);
+  color: var(--dsw-alias-label-error);
+}
+
+.listCancel:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.listName {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.listNameText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listCreated {
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-mono);
+  font-size: 12px;
+}
+
+.listEmpty {
+  margin: 0;
+  padding: 16px 12px;
+  border-top: 1px solid var(--dsw-alias-border-normal);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.error {
+  margin: 12px 0 0;
+  color: var(--dsw-alias-label-error);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.audio {
+  width: 100%;
+}
+
+.summary,
+.transcript pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: 12px/19px var(--dsw-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript {
+  margin-top: 16px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.transcript summary {
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 18px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.download:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.upload {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.upload:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.microphone {
+  display: inline-flex;
+  align-items: center;
+}
+
+.microphoneSelect {
+  min-height: 36px;
+  max-width: 200px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-normal);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.noSource {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.systemAudio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

@@ -1,0 +1,47 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "files": [
+    "src/client/MeetingMinutesButton.tsx",
+    "src/client/MeetingMinutesSettingsCard.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/media-duration.ts",
+    "src/client/settings-form.ts",
+    "src/css-modules.d.ts",
+    "src/types.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../client/locale"
+    },
+    {
+      "path": "../../client/runtime"
+    },
+    {
+      "path": "../../client/ui-conversation"
+    },
+    {
+      "path": "../../client/ui-primitives"
+    },
+    {
+      "path": "../../client/ui-settings"
+    },
+    {
+      "path": "../../client/ui-settings-plugins"
+    },
+    {
+      "path": "../../client/ui-slots"
+    },
+    {
+      "path": "../../util/brand"
+    }
+  ]
+}
