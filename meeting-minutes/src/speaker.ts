@@ -3,7 +3,7 @@
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { NdjsonWorker } from '@deepseek-ai/dsh-ndjson-worker'
+import { NdjsonWorker } from './ndjson-worker.ts'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedConfig } from './config.ts'
 import type { SpeakerId } from './types.ts'

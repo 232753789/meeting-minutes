@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/asr.ts",
+    "src/config.ts",
+    "src/ffmpeg.ts",
+    "src/http.ts",
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/lifecycle.ts",
+    "src/loopback-request.ts",
+    "src/ndjson-worker.ts",
+    "src/runtime.ts",
+    "src/settings-section.ts",
+    "src/speaker.ts",
+    "src/storage.ts",
+    "src/summary.ts",
+    "src/types.ts",
+    "src/standalone-shims.d.ts"
+  ]
+}

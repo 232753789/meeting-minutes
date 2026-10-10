@@ -8,11 +8,8 @@
  * accepts an empty string, so nothing else could mean.
  */
 
-import {
-  createSnapshotStore,
-  type SettingsScope,
-  type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /**
  * Namespace the Host plugin registers. Spelled here rather than imported: a browser bundle must

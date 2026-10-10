@@ -1,6 +1,6 @@
 /** Browser recorder, result dialog, and the plugin's own settings card. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: the settings shell's `ctx.settingsScope` Context merge and the plugin
@@ -40,7 +40,7 @@ export function apply(ctx: ClientContext): void {
 
   // The recorder is the plugin's product surface and must not depend on the settings page, so
   // the card rides a scoped fiber: a deployment without the settings shell simply has no card.
-  ctx.inject(['settingsScope', 'connection', 'remote'], (settingsCtx) => {
+  ctx.inject(['settingsScope', 'connection', 'remote'], (settingsCtx: ClientContext) => {
     const form = new MeetingSettingsForm(
       settingsCtx.settingsScope.bind({ namespace: MEETING_MINUTES_NS }),
     )

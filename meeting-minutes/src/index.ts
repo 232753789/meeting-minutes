@@ -8,11 +8,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-llm'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { Config, resolveConfig } from './config.ts'
 import { MEETING_API_PREFIX } from './http.ts'
 import { MeetingMinutesInstallation } from './lifecycle.ts'
+import { installSettingsSection, settingsNamespace } from './settings-section.ts'
 
 export { Config, MEETING_API_PREFIX, resolveConfig }
 export type { ResolvedConfig } from './config.ts'

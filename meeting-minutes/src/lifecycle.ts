@@ -1,10 +1,10 @@
 /** The live routes-and-runtime installation, replaced whenever resolved settings change. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { deepEqualJson } from '@deepseek-ai/dsh-settings'
 import type { ResolvedConfig } from './config.ts'
 import { MeetingHttpController, MEETING_API_PREFIX } from './http.ts'
 import { MeetingMinutesRuntime } from './runtime.ts'
+import { deepEqualJson } from './settings-section.ts'
 
 /**
  * Owns one routes-and-runtime installation and replaces it when settings change.

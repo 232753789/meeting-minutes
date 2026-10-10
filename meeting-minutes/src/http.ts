@@ -6,7 +6,7 @@ import { mkdir, open, rm, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { isLoopbackSameOriginRequest } from '@deepseek-ai/dsh-loopback-request'
+import { isLoopbackSameOriginRequest } from './loopback-request.ts'
 import type { MeetingMinutesRuntime } from './runtime.ts'
 import {
   isMeetingId,

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type {
   SettingsScope,
   SettingsScopeSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { MeetingMinutesSettingsCard } from '../src/client/MeetingMinutesSettingsCard.tsx'
 import { MeetingSettingsForm, type MeetingSettingsSection } from '../src/client/settings-form.ts'
 import { zh } from '../src/client/locales.ts'
